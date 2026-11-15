@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BrainCircuit, Code2, FileText, Globe2, Hourglass, Monitor, Network, Orbit, ScanSearch, Sparkles, Waves } from 'lucide-react';
+import { BrainCircuit, Code2, FileText, Globe2, Hourglass, Network, Orbit, ScanSearch, Sparkles, Waves } from 'lucide-react';
 import type { Bot, LiveState, Row } from '@shared/types';
 import { activityPhrase, activityStatus, isWaitingForYou } from '../lib/phrases';
 import { duration } from '../lib/time';
