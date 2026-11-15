@@ -122,13 +122,43 @@ function soul(b: any): string {
   ].join('\n');
 }
 
-/** Rewrite the persona file after a rename or a new description. The primary agent keeps its own. */
+/** Rewrite the persona file after a rename or a new description. The primary agent keeps its own, and a soul the user wrote stays. */
 export function syncPersona(botId: string) {
   const b = botRow(botId);
-  if (!b || b.engine !== 'managed') return;
+  if (!b || b.engine !== 'managed' || b.soul_custom) return;
   const home = homeFor(botId);
   if (!fs.existsSync(home)) return;
   fs.writeFileSync(path.join(home, 'SOUL.md'), soul(b));
+}
+
+// ---------- the soul (SOUL.md): who the bot is, editable in Bot settings ----------
+
+const soulFile = (botId: string): string | null => {
+  const home = engineHome(botId);
+  return home ? path.join(home, 'SOUL.md') : null;
+};
+
+export const SOUL_MAX = 20_000;
+
+/** The bot's soul as Hermes reads it. `custom` = the user wrote it (renames no longer rewrite it). */
+export function readSoul(botId: string): { text: string; custom: boolean; suggested: string } {
+  const b = botRow(botId);
+  const suggested = b ? soul(b) : '';
+  const file = soulFile(botId);
+  let text = '';
+  try { if (file) text = fs.readFileSync(file, 'utf8'); } catch { /* not written yet */ }
+  return { text: text || suggested, custom: !!b?.soul_custom, suggested };
+}
+
+/** Save the soul, or put the app's default back (text = null). */
+export function writeSoul(botId: string, text: string | null) {
+  const b = botRow(botId);
+  const file = soulFile(botId);
+  if (!b || !file) throw new Error('This bot has no engine yet; send it a message first.');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const body = text === null ? soul(b) : text.slice(0, SOUL_MAX);
+  fs.writeFileSync(file, body.endsWith('\n') ? body : `${body}\n`);
+  db.prepare('UPDATE bots SET soul_custom=? WHERE id=?').run(text === null ? 0 : 1, botId);
 }
 
 function extraMcpServers(): Record<string, any> {

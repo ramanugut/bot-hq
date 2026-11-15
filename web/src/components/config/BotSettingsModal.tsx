@@ -51,6 +51,7 @@ export function BotSettingsModal() {
 
   const tabs: { id: BotSettingsTab; label: string; count?: number }[] = [
     { id: 'general', label: 'General' },
+    ...(bot.kind !== 'room' ? [{ id: 'soul' as const, label: 'Soul' }] : []),
     { id: 'skills', label: 'Skills', count: data?.skills.length },
     { id: 'memories', label: 'Memories', count: data?.memories.length },
     { id: 'routines', label: 'Routines', count: (routines ?? data?.routines)?.length },
@@ -77,6 +78,7 @@ export function BotSettingsModal() {
         <div className="cfg-content">
           {loadError && <div className="cfg-error">Couldn’t load settings: {loadError}</div>}
           {target.tab === 'general' && <GeneralTab bot={bot} onClose={onClose} />}
+          {target.tab === 'soul' && <SoulTab bot={bot} />}
           {target.tab === 'skills' && <SkillsTab bot={bot} skills={data?.skills} onChange={reload} />}
           {target.tab === 'memories' && <MemoriesTab bot={bot} data={data} onChange={reload} />}
           {target.tab === 'routines' && <RoutinesTab bot={bot} routines={routines ?? data?.routines} />}
@@ -223,6 +225,55 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+/** The bot's SOUL.md: who it is, how it talks, what it cares about. Hermes reads it at the start of every chat. */
+function SoulTab({ bot }: { bot: Bot }) {
+  const [soul, setSoul] = useState<{ text: string; custom: boolean; suggested: string } | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
+  const flash = (text: string, tone: 'ok' | 'error' = 'ok') => { setNote({ text, tone }); setTimeout(() => setNote(null), 2600); };
+  useEffect(() => {
+    let alive = true;
+    configApi.soul(bot.id).then((r) => { if (alive) { setSoul(r); setDraft(r.text); } }).catch((e) => alive && flash(e.message, 'error'));
+    return () => { alive = false; };
+  }, [bot.id]);
+  const dirty = !!soul && draft !== soul.text;
+  const save = async (reset = false) => {
+    setBusy(true);
+    try {
+      const r = await configApi.saveSoul(bot.id, reset ? { reset: true } : { text: draft });
+      setSoul(r); setDraft(r.text);
+      flash(reset ? 'Back to the default soul' : `Saved. ${bot.name} follows it from the next message.`);
+    } catch (e) { flash((e as Error).message, 'error'); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="cfg-page">
+      <section className="cfg-section">
+        <div className="cfg-section__label">Soul</div>
+        <div className="cfg-field__hint">
+          Who {bot.name} is: personality, tone, values, what it cares about and how it talks to you and your customers.
+          Instructions (General tab) are rules for the work; the soul is the character. {soul?.custom ? 'You have written your own.' : 'This is the default the app wrote.'}
+        </div>
+        {!soul ? <div className="cfg-empty cfg-empty--flat">Loading…</div> : (
+          <textarea className="text-input cfg-textarea cfg-textarea--soul" value={draft} maxLength={20000} spellCheck
+            onChange={(e) => setDraft(e.target.value)} aria-label={`${bot.name}'s soul`}
+            placeholder={'e.g.\nYou are Doug, my chief of staff. Calm, sharp and a little dry.\nYou speak South African English and keep messages short.\nYou protect my time: push back on meetings that could be an email.'} />
+        )}
+        <div className="cfg-field__hint">{draft.length.toLocaleString()} / 20,000 characters. Markdown works.</div>
+      </section>
+      <div className={`cfg-savebar${dirty ? ' is-dirty' : ''}`}>
+        <span className={`cfg-savebar__note${note?.tone === 'error' ? ' is-error' : ''}`} role="status">{note?.text ?? (dirty ? 'Unsaved changes' : '')}</span>
+        {soul?.custom && !dirty && (
+          <ConfirmButton className="cfg-btn cfg-btn--secondary" confirmLabel="Reset soul" onConfirm={() => save(true)}>Reset to default</ConfirmButton>
+        )}
+        <button type="button" className="cfg-btn cfg-btn--secondary" disabled={!dirty || busy} onClick={() => soul && setDraft(soul.text)}>Discard</button>
+        <button type="button" className="cfg-btn cfg-btn--primary" disabled={!dirty || busy || !draft.trim()} onClick={() => save()}>{busy ? 'Saving…' : 'Save soul'}</button>
+      </div>
     </div>
   );
 }

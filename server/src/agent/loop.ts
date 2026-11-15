@@ -7,7 +7,7 @@ import { HEARTBEAT_OK } from '../heartbeat.js';
 import type { ActivityKind, MessageBody, ToolCallBody } from '../types.js';
 import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
-import { engineFor } from '../engine.js';
+import { engineFor, readSoul } from '../engine.js';
 import { instructionsFor } from './prompt.js';
 import { notifyBot } from '../push.js';
 import { activityFor, appToolName, humanizeSlug, policyFor, postImage, splitMedia } from './tools.js';
@@ -385,10 +385,12 @@ async function runTurn(botId: string, trigger: Trigger) {
     // Hermes keeps a conversation's system prompt fixed, so changed instructions or skills would only
     // apply in a new chat. Tell the bot about the change in the message itself instead.
     const skillRows = db.prepare('SELECT name, body FROM skills WHERE bot_id=? ORDER BY created_at').all(botId) as any[];
-    const sig = crypto.createHash('sha1').update(JSON.stringify([bot.instructions ?? '', skillRows])).digest('hex');
+    // The soul only counts once the user has written one (the default is already in the engine's prompt).
+    const soulText = bot.soul_custom ? readSoul(botId).text : '';
+    const sig = crypto.createHash('sha1').update(JSON.stringify(soulText ? [bot.instructions ?? '', skillRows, soulText] : [bot.instructions ?? '', skillRows])).digest('hex');
     if (bot.instructions_sig && bot.instructions_sig !== sig) {
       const skillsText = skillRows.map((r) => `### ${r.name}\n${r.body}`).join('\n\n');
-      input = `[Note from the app: your instructions or skills were just changed. From now on follow these, replacing any earlier version.\n## Instructions\n${bot.instructions || '(none)'}${skillsText ? `\n## Skills\n${skillsText}` : ''}]\n\n${input}`;
+      input = `[Note from the app: your soul, instructions or skills were just changed. From now on follow these, replacing any earlier version.${soulText ? `\n## Soul (who you are)\n${soulText}` : ''}\n## Instructions\n${bot.instructions || '(none)'}${skillsText ? `\n## Skills\n${skillsText}` : ''}]\n\n${input}`;
     }
     if (bot.instructions_sig !== sig) db.prepare('UPDATE bots SET instructions_sig=? WHERE id=?').run(sig, botId);
     // Something to hand over once: a merged chat's content, or what a heartbeat posted here.

@@ -31,6 +31,8 @@
 .cfg-field__hint { font-size: 12px; line-height: 16px; letter-spacing: 0.12px; color: var(--color-text-tertiary); }
 .cfg-textarea { height: auto; min-height: 56px; resize: vertical; line-height: 19px; padding: 8px 10px; font-family: inherit; }
 .cfg-textarea--tall { min-height: 132px; }
+.cfg-textarea--soul { min-height: 320px; font-family: var(--font-mono-stack); font-size: 13px; line-height: 20px; }
+@media (max-width: 760px) { .cfg-textarea--soul { min-height: 52vh; font-size: 16px; } }
 .text-input[aria-invalid='true'] { border-color: var(--color-danger); }
 .cfg-seg { display: inline-flex; align-self: flex-start; padding: 2px; gap: 2px; border-radius: var(--radius-full); background: var(--color-bg-tertiary); box-shadow: var(--color-border-tertiary) 0 0 0 0.5px inset; flex-wrap: wrap; }
 .cfg-seg button { height: 26px; padding: 0 12px; border-radius: var(--radius-full); font-size: 13px; line-height: 18px; color: var(--color-text-secondary); transition: background-color 120ms, color 120ms; }

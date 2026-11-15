@@ -14,7 +14,7 @@ import { runHeartbeat } from './heartbeat.js';
 import { box } from './box.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
-import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen } from './engine.js';
+import { readSoul, SOUL_MAX, writeSoul, engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen } from './engine.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
 import type { LibraryFile, Skill } from './types.js';
@@ -36,6 +36,24 @@ const toSkill = (s: any): Skill => ({ id: s.id, botId: s.bot_id, name: s.name, d
 const listSkills = (botId: string) => (db.prepare('SELECT * FROM skills WHERE bot_id=? ORDER BY created_at ASC').all(botId) as any[]).map(toSkill);
 
 // ---------- settings bundle ----------
+
+// ---------- soul (SOUL.md) ----------
+
+configApi.get('/bots/:id/soul', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  return c.json(readSoul(b.id));
+});
+
+configApi.put('/bots/:id/soul', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const { text, reset } = await c.req.json<{ text?: string; reset?: boolean }>();
+  if (!reset && (typeof text !== 'string' || !text.trim())) return c.json({ error: 'The soul can’t be empty. Use Reset to go back to the default.' }, 400);
+  if (!reset && text!.length > SOUL_MAX) return c.json({ error: `Keep it under ${SOUL_MAX / 1000}k characters.` }, 400);
+  try { writeSoul(b.id, reset ? null : text!); } catch (e: any) { return c.json({ error: e?.message ?? String(e) }, 409); }
+  return c.json(readSoul(b.id));
+});
 
 configApi.get('/bots/:id/settings', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));

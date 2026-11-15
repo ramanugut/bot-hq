@@ -167,6 +167,8 @@ addColumn('bots', 'heartbeat_checklist', "TEXT NOT NULL DEFAULT ''");
 addColumn('bots', 'heartbeat_quiet', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('bots', 'heartbeat_last_at', 'INTEGER');
 addColumn('bots', 'heartbeat_last_note', 'TEXT');
+// The user edited the bot's SOUL.md: renames no longer rewrite it.
+addColumn('bots', 'soul_custom', 'INTEGER NOT NULL DEFAULT 0');
 
 // Chats: every "generation" of a bot's conversation is one chat. This table only holds what the
 // rows can't tell: a title, whether it is archived, and a note to hand the bot on its next turn.
