@@ -39,7 +39,8 @@ interface ToolDef {
   impl: Impl;
 }
 
-const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: false });
+// Extra fields a model adds (a 'title', a 'description') are ignored rather than failing the call.
+const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required, additionalProperties: true });
 
 function botByName(userId: string, name: string) {
   return db.prepare('SELECT * FROM bots WHERE user_id=? AND lower(name)=lower(?)').get(userId, name.trim()) as any;
