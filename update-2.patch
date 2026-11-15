@@ -54,6 +54,45 @@ index 0000000..728bdec
 +systemctl restart caddy
 +supervisorctl restart hq-app >/dev/null
 +echo "address changed: $cur -> $new"
+diff --git a/server/src/agent/loop.ts b/server/src/agent/loop.ts
+index edadfd5..bb8d0bf 100644
+--- a/server/src/agent/loop.ts
++++ b/server/src/agent/loop.ts
+@@ -7,7 +7,7 @@ import { toolkitInfo } from '../composio.js';
+ import { screenForWork } from '../computer.js';
+ import { engineFor } from '../engine.js';
+ import { instructionsFor } from './prompt.js';
+-import { activityFor, appToolName, humanizeSlug, policyFor } from './tools.js';
++import { activityFor, appToolName, humanizeSlug, policyFor, postImage, splitMedia } from './tools.js';
+ 
+ /**
+  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
+@@ -320,8 +320,13 @@ async function runTurn(botId: string, trigger: Trigger) {
+     else updateRow(botId, msgSeq, b);
+     lastFlush = Date.now();
+   };
++  const shareMedia = (paths: string[]) => {
++    for (const p of paths) void postImage(botId, p).then((r) => { if (!r.ok) appendRow(botId, 'notice', { type: 'notice', text: r.message, tone: 'error' }); }).catch(() => {});
++  };
+   const closeMessage = () => {
+     if (msgSeq === null) return;
++    const media = splitMedia(text);
++    if (media.paths.length) { text = media.text; shareMedia(media.paths); }
+     if (text.trim()) {
+       flush(false);
+       db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
+@@ -329,7 +334,10 @@ async function runTurn(botId: string, trigger: Trigger) {
+     msgSeq = null;
+     text = '';
+   };
+-  const say = (t: string) => {
++  const say = (raw: string) => {
++    const media = splitMedia(raw);
++    if (!turn.silent) shareMedia(media.paths);
++    const t = media.text;
+     if (turn.silent || !t.trim()) return;
+     closeMessage();
+     appendRow(botId, 'message', { type: 'message', role: 'assistant', text: t.trim(), streaming: false });
 diff --git a/server/src/agent/prompt.ts b/server/src/agent/prompt.ts
 index 929da8f..1c5ede3 100644
 --- a/server/src/agent/prompt.ts
@@ -89,10 +128,22 @@ index 929da8f..1c5ede3 100644
  - Write like a sharp colleague texting: short, warm, direct. No headings for simple replies. Lists or tables only when they help.
  - Never say something is done unless a tool result shows it. Never invent facts.
 diff --git a/server/src/agent/tools.ts b/server/src/agent/tools.ts
-index 3ee11f3..ae848fb 100644
+index 3ee11f3..9208f7b 100644
 --- a/server/src/agent/tools.ts
 +++ b/server/src/agent/tools.ts
-@@ -104,6 +104,29 @@ export const TOOLS: ToolDef[] = [
+@@ -100,10 +100,28 @@ export const TOOLS: ToolDef[] = [
+     impl: async (a, ctx) => {
+       const name = String(a.filename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'file.txt';
+       const file = `${LIBRARY_ROOT}/${ctx.botId}/${name}`;
+-      await box.writeFile(file, String(a.content ?? ''));
++      const content = String(a.content ?? '');
++      // A bot that passes a file's path as the content means "save that file": copy it rather than write the path.
++      const asPath = /^\/\S+$/.test(content.trim()) ? await box.readFile(content.trim()) : null;
++      if (asPath && /\.(png|jpe?g|webp|gif)$/i.test(name)) {
++        const r = await postImage(ctx.botId, content.trim());
++        return { output: r.message, ...(r.ok ? { summary: `Saved ${r.name}` } : {}) };
++      }
++      await box.writeFile(file, asPath ?? content);
        return { output: JSON.stringify({ ok: true, path: file }), summary: `Saved ${name}` };
      },
    },
@@ -103,25 +154,51 @@ index 3ee11f3..ae848fb 100644
 +    activity: 'drafting_file',
 +    label: 'Sharing an image',
 +    impl: async (a, ctx) => {
-+      const src = String(a.path ?? '');
-+      const ext = (src.split('.').pop() ?? '').toLowerCase();
-+      if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return { output: 'Only PNG, JPG, WEBP or GIF can be shown. Convert the image first.' };
-+      const data = await box.readFile(src);
-+      if (!data) return { output: `No file at ${src}.` };
-+      const magic = data.subarray(0, 12);
-+      const isImage = (magic[0] === 0x89 && magic[1] === 0x50) || (magic[0] === 0xff && magic[1] === 0xd8) || magic.subarray(0, 4).toString() === 'RIFF' || magic.subarray(0, 3).toString() === 'GIF';
-+      const pngTiny = magic[0] === 0x89 && data.length >= 24 && (data.readUInt32BE(16) < 64 || data.readUInt32BE(20) < 64);
-+      if (!isImage || pngTiny) return { output: `${src} is not a real image (${data.length} bytes). Do not claim it was made; generate it again.` };
-+      const name = (src.split('/').pop() ?? 'image.' + ext).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
-+      const dest = `${LIBRARY_ROOT}/${ctx.botId}/${name}`;
-+      if (dest !== src) await box.writeFile(dest, data);
-+      appendRow(ctx.botId, 'card', { type: 'card', card: 'image', path: name, ...(a.caption ? { caption: String(a.caption).slice(0, 300) } : {}) });
-+      return { output: `Shown in the chat and saved to the Library as ${name}.`, summary: `Shared ${name}` };
++      const r = await postImage(ctx.botId, String(a.path ?? ''), a.caption ? String(a.caption) : undefined);
++      return { output: r.message, ...(r.ok ? { summary: `Shared ${r.name}` } : {}) };
 +    },
 +  },
    {
      name: 'x_search',
      description: "Research X (Twitter) live: what people are posting about a topic, what is going viral, reactions to news, or one account's recent posts. Returns a written answer with links to the posts. Ask one focused question per call and say what you want back, e.g. \"the 10 most-engaged posts about AI agents from the last 48 hours, with author, likes and link\".",
+@@ -354,6 +372,37 @@ export const TOOLS: ToolDef[] = [
+   },
+ ];
+ 
++/**
++ * Put an image into the chat: copy it into the bot's Library and add an image card.
++ * Refuses files that are not real images, so a bot cannot report a picture it never made.
++ */
++export async function postImage(botId: string, src: string, caption?: string): Promise<{ ok: boolean; message: string; name?: string }> {
++  const ext = (src.split('.').pop() ?? '').toLowerCase();
++  if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return { ok: false, message: 'Only PNG, JPG, WEBP or GIF can be shown. Convert the image first.' };
++  const data = await box.readFile(src);
++  if (!data) return { ok: false, message: `No file at ${src}.` };
++  const magic = data.subarray(0, 12);
++  const isImage = (magic[0] === 0x89 && magic[1] === 0x50) || (magic[0] === 0xff && magic[1] === 0xd8) || magic.subarray(0, 4).toString() === 'RIFF' || magic.subarray(0, 3).toString() === 'GIF';
++  const pngTiny = magic[0] === 0x89 && data.length >= 24 && (data.readUInt32BE(16) < 64 || data.readUInt32BE(20) < 64);
++  if (!isImage || pngTiny) return { ok: false, message: `${src} is not a real image (${data.length} bytes). Do not claim it was made; generate it again.` };
++  const name = (src.split('/').pop() ?? `image.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
++  const dest = `${LIBRARY_ROOT}/${botId}/${name}`;
++  if (dest !== src) await box.writeFile(dest, data);
++  appendRow(botId, 'card', { type: 'card', card: 'image', path: name, ...(caption ? { caption: caption.slice(0, 300) } : {}) });
++  return { ok: true, message: `Shown in the chat and saved to the Library as ${name}.`, name };
++}
++
++/** Hermes marks files for the person with lines like "MEDIA:/path/to/file.png". Split those out of a reply. */
++export function splitMedia(text: string): { text: string; paths: string[] } {
++  const paths: string[] = [];
++  const kept = text.split('\n').filter((line) => {
++    const m = /^\s*MEDIA:\s*(\/\S+)\s*$/.exec(line);
++    if (m) paths.push(m[1]);
++    return !m;
++  });
++  return { text: kept.join('\n'), paths };
++}
++
+ export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
+ 
+ // ---------- approvals policy ----------
 diff --git a/server/src/engine.ts b/server/src/engine.ts
 index 1c4f6a5..4df2d22 100644
 --- a/server/src/engine.ts
