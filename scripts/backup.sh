@@ -5,7 +5,9 @@
 #   bash /opt/hq/app/scripts/backup.sh
 set -euo pipefail
 umask 077
-OUT=/opt/hq/backups; KEEP="${KEEP:-3}"
+SOURCE_ROOT="${BOTLY_BACKUP_SOURCE_ROOT:-/}"
+DB_PATH="${BOTLY_BACKUP_DB_PATH:-/opt/hq/data/hq.db}"
+OUT="${BOTLY_BACKUP_DIR:-/opt/hq/backups}"; KEEP="${KEEP:-3}"
 [[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || { echo "KEEP must be positive" >&2; exit 2; }
 mkdir -p "$OUT"; chmod 700 "$OUT"
 stamp="$(date -u +%Y%m%d-%H%M)"
@@ -13,9 +15,9 @@ tmp="$(mktemp -d)"
 partial="$(mktemp "$OUT/.backup-XXXXXXXX.partial")"
 trap 'rm -rf "$tmp"; rm -f "$partial"' EXIT
 # A consistent copy of the live database (safe while the app is running).
-python3 - "$tmp/database-backup.db" <<'PY'
+python3 - "$DB_PATH" "$tmp/database-backup.db" <<'PY'
 import sqlite3, sys
-src = sqlite3.connect('/opt/hq/data/hq.db'); dst = sqlite3.connect(sys.argv[1])
+src = sqlite3.connect(sys.argv[1]); dst = sqlite3.connect(sys.argv[2])
 src.backup(dst)
 assert dst.execute('PRAGMA integrity_check').fetchone()[0] == 'ok', 'Invalid SQLite snapshot'
 dst.close(); src.close()
@@ -30,7 +32,7 @@ tar --warning=no-file-changed -czf "$partial" \
   --exclude='*/Safe Browsing' --exclude='*/WidevineCdm' --exclude='*/Crashpad' --exclude='*/OnDeviceHeadSuggestModel' \
   --exclude='*/screen_ai' --exclude='*/hyphen-data' --exclude='*/Subresource Filter' --exclude='*/MEIPreload' \
   --exclude='root/.hermes/cache' --exclude='*/__pycache__' --exclude='*.log' \
-  -C / opt/hq/data opt/hq/app/.env root/.hermes root/grokbot \
+  -C "$SOURCE_ROOT" opt/hq/data opt/hq/app/.env root/.hermes root/grokbot \
   -C "$tmp" database-backup.db
 # Publish only a complete archive, keeping old backups on any failure.
 tar -tzf "$partial" >/dev/null
