@@ -7,7 +7,8 @@
     "dev": "npm run dev -w server & npm run dev -w web",
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "test:hardening": "npm run build -w server && node --test tests/hardening.test.mjs && bash -n scripts/backup.sh scripts/update.sh"
   },
   "engines": { "node": ">=22" }
 }

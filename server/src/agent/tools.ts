@@ -13,7 +13,7 @@ import { createRoom, postToRoom } from './rooms.js';
 import type { ActivityKind } from '../types.js';
 import { Cron } from 'croner';
 import fs from 'node:fs';
-import path from 'node:path';
+import { safeLibraryReadPath } from '../lib/library-path.js';
 import { spawn } from 'node:child_process';
 
 /** Only one video render at a time across the small EC2 server. */
@@ -46,9 +46,7 @@ function startRender(botId: string, cmd: string, args: string[], out: string, ca
   };
   const jobId = newId('render');
   db.prepare('INSERT INTO render_jobs(id,bot_id,output,status,started_at) VALUES (?,?,?,?,?)').run(jobId, botId, out, 'running', now());
-  let p: ReturnType<typeof spawn>;
-  try { p = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true }); }
-  catch (e) { db.prepare("UPDATE render_jobs SET status='failed',finished_at=? WHERE id=?").run(now(), jobId); cleanup?.(); throw e; }
+  const p = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
   rendering.add(botId);
   let log = '';
   let finished = false;
@@ -61,7 +59,7 @@ function startRender(botId: string, cmd: string, args: string[], out: string, ca
     timedOut = true;
     log += '\nRendering exceeded the 10-minute safety limit.';
     terminateGroup('SIGTERM');
-    setTimeout(() => terminateGroup('SIGKILL'), 5000).unref();
+    setTimeout(() => { if (!finished) terminateGroup('SIGKILL'); }, 5000).unref();
   }, RENDER_TIMEOUT_MS);
   watchdog.unref();
   p.stdout.on('data', (d) => { log = (log + d).slice(-20000); });
@@ -168,17 +166,8 @@ async function xSearch(a: any): Promise<string> {
 /** Where each bot's Library lives on the shared computer. */
 export const LIBRARY_ROOT = '/root/grokbot/files';
 
-/** Resolve a source only inside the calling bot's Library; symlink escapes are denied. */
-export function libraryReadPath(botId: string, requested: string): string {
-  const root = fs.realpathSync(path.join(LIBRARY_ROOT, botId));
-  const full = fs.realpathSync(path.isAbsolute(requested) ? requested : path.join(root, requested));
-  const rel = path.relative(root, full);
-  if (!rel || rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
-    throw new Error('Only files in your own Library may be read.');
-  }
-  if (!fs.statSync(full).isFile()) throw new Error('The source is not a file.');
-  return full;
-}
+/** Resolve file access within the calling bot's Library, including symlink checks. */
+export const libraryReadPath = (botId: string, requested: string) => safeLibraryReadPath(LIBRARY_ROOT, botId, requested);
 
 export const TOOLS: ToolDef[] = [
   {
