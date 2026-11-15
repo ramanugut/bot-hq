@@ -96,6 +96,30 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
 - Codespaces needs `PARALLAX_ORIGIN` (that was the separate ReelForge app, not this one).
 - Composio (connected apps), xAI (voice, X search) and Orgo are optional and off; their buttons are hidden.
 
+## Security and reliability changes (15 Nov 2026, GitHub only)
+- Backup downloads now require the owner (BOTLY_OWNER_EMAIL, or the first ALLOWED_EMAILS
+  entry) AND a fresh account password. GET /api/backups/latest was replaced with an
+  authenticated POST and the account menu asks for the password. Owner-only download
+  fails closed when neither owner setting exists.
+- scripts/backup.sh uses an online SQLite snapshot with integrity check and a temporary,
+  verified tar archive. Previous backups remain intact if the new archive fails.
+- The read_document tool accepts local Library files only, with realpath containment,
+  symlink checks and a 25 MB limit. Direct URLs must be downloaded separately.
+- Sensitive native MCP tools now require approval (unless explicitly always allowed
+  by the user), including scheduled routines and video renders.
+- Heartbeat skips repeat AI calls for empty checklists with no new tasks or approvals,
+  while retaining a daily review and regular checks for configured checklists.
+- Video renders have one global slot, a 10-minute watchdog, and persistent job status.
+- Deployment script now refuses dirty or wrong-branch checkouts, checks health after
+  restart and attempts rollback on failure.
+- npm run test:hardening runs a library isolation regression test and checks shell syntax.
+- All changes are committed to free-edition. They are NOT deployed or verified on EC2.
+
+**Unresolved before autonomous production work:** Hermes and bots still run as root;
+Hermes browser/shell actions bypass Botly MCP approvals. Migrating to separate non-root
+users, isolation and an enforceable broker requires a planned server cutover and testing.
+See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
+ 
 ## Open items
 1. Usage meter (`server/src/usage.ts`) shows nothing yet: the shape of Hermes' `auth.json` and the Codex
    usage endpoint response need checking on the server.
