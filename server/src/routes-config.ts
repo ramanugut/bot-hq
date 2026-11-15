@@ -287,13 +287,13 @@ configApi.post('/bots/:id/upload', async (c) => {
   const body = await c.req.parseBody().catch(() => null);
   const f = body?.file;
   if (!f || typeof f === 'string') return c.json({ error: 'no file' }, 400);
-  if (f.size > 25 * 1024 * 1024) return c.json({ error: 'Files can be up to 25 MB.' }, 413);
+  if (f.size > 60 * 1024 * 1024) return c.json({ error: 'Files can be up to 60 MB.' }, 413);
   const base = (f.name || 'file').replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/\s+/g, '-').slice(-100) || 'file';
   const dir = `${LIB_ROOT}/${b.id}/uploads`;
   let name = base;
   for (let i = 2; fs.existsSync(`${dir}/${name}`); i++) name = base.replace(/(\.[^.]*)?$/, `-${i}$1`);
   await box.writeFile(`${dir}/${name}`, Buffer.from(await f.arrayBuffer()));
-  return c.json({ ok: true, path: `${dir}/${name}`, name, size: f.size });
+  return c.json({ ok: true, path: `${dir}/${name}`, rel: `uploads/${name}`, name, size: f.size });
 });
 
 configApi.get('/bots/:id/files/raw', (c) => {
@@ -314,8 +314,8 @@ configApi.get('/bots/:id/files/raw', (c) => {
   // Raster images, videos and audio can be shown in the chat (?inline=1). SVG/HTML stay downloads: they can carry scripts.
   const INLINE: Record<string, string> = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
-    mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm',
-    mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg',
+    mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', '3gp': 'video/3gpp',
+    mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', aac: 'audio/aac',
   };
   const type = c.req.query('inline') === '1' ? INLINE[name.split('.').pop()!.toLowerCase()] : undefined;
   const size = fs.statSync(file).size;

@@ -30,7 +30,7 @@ export const api = {
     const fd = new FormData(); fd.append('file', file);
     const res = await fetch(`/api/bots/${botId}/upload`, { method: 'POST', credentials: 'include', body: fd });
     if (!res.ok) { let m = res.statusText; try { m = (await res.json()).error ?? m; } catch { /* */ } throw new ApiError(res.status, m); }
-    return res.json() as Promise<{ ok: true; path: string; name: string; size: number }>;
+    return res.json() as Promise<{ ok: true; path: string; rel: string; name: string; size: number }>;
   },
   passwordLogin: (email: string, password: string) => req<{ ok: true }>('POST', '/auth/password', { email, password }),
   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
@@ -47,7 +47,7 @@ export const api = {
   createBot: (b: Pick<Bot, 'name' | 'avatarShape' | 'avatarColor' | 'mode'>) => req<{ bot: Bot }>('POST', '/bots', b),
   markRead: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/read`),
   rows: (id: string) => req<{ generation: number; rows: Row[] }>('GET', `/bots/${id}/rows`),
-  send: (id: string, text: string) => req<{ row: Row }>('POST', `/bots/${id}/messages`, { text }),
+  send: (id: string, text: string, attachments?: { name: string; path: string; size?: number }[]) => req<{ row: Row }>('POST', `/bots/${id}/messages`, { text, ...(attachments?.length ? { attachments } : {}) }),
   interrupt: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/interrupt`),
   fresh: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/fresh`),
   chats: (id: string) => req<{ chats: ChatInfo[] }>('GET', `/bots/${id}/chats`),

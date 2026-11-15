@@ -1,5 +1,5 @@
 import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Bot, LiveState, MessageBody, Row, ToolCallBody } from '@shared/types';
+import type { Attachment, Bot, LiveState, MessageBody, Row, ToolCallBody } from '@shared/types';
 import { BotAvatar, BotAvatarFor } from '../avatar/BotAvatar';
 import { isWaitingForYou } from '../lib/phrases';
 import { clock, dividerLabel, duration } from '../lib/time';
@@ -35,7 +35,7 @@ function buildItems(rows: Row[]): Item[] {
     }
     if (last?.kind === 'steps' && last.endTs === null) last.endTs = row.createdAt;
     if (b.type === 'message') {
-      if (!b.text && !b.streaming) continue;
+      if (!b.text && !b.streaming && !b.attachments?.length) continue;
       const side = b.role === 'user' && (!b.from || b.from.kind === 'voice') ? 'right' : 'left';
       const sender = b.from ? `${b.from.kind}:${b.from.id}` : b.role;
       const lastRow = last?.kind === 'group' ? last.rows[last.rows.length - 1] : null;
@@ -57,10 +57,33 @@ function cornerClass(i: number, n: number) {
   return ' is-mid';
 }
 
+/** Photos, videos and files the user sent, shown above their message. */
+function Attachments({ botId, items, side }: { botId: string; items: Attachment[]; side: 'left' | 'right' }) {
+  const url = (p: string, inline = true) => `/api/bots/${botId}/files/raw?path=${encodeURIComponent(p)}${inline ? '&inline=1' : ''}`;
+  const media = items.filter((a) => a.kind === 'image' || a.kind === 'video');
+  const other = items.filter((a) => a.kind !== 'image' && a.kind !== 'video');
+  return (
+    <div className={`attachments is-${side}`}>
+      {media.length > 0 && (
+        <div className={`attachments__grid is-${Math.min(media.length, 3)}`}>
+          {media.map((a) => a.kind === 'video'
+            ? <video key={a.path} className="attachments__media" src={url(a.path)} controls playsInline preload="metadata" />
+            : <a key={a.path} href={url(a.path)} target="_blank" rel="noreferrer"><img className="attachments__media" src={url(a.path)} alt={a.name} loading="lazy" /></a>)}
+        </div>
+      )}
+      {other.map((a) => a.kind === 'audio'
+        ? <audio key={a.path} className="attachments__audio" src={url(a.path)} controls preload="metadata" />
+        : <a key={a.path} className="attachments__file" href={url(a.path, false)} download>📎 {a.name}{a.size ? <span> · {a.size < 1e6 ? `${Math.max(1, Math.round(a.size / 1e3))} KB` : `${(a.size / 1e6).toFixed(1)} MB`}</span> : null}</a>)}
+    </div>
+  );
+}
+
 const Bubble = memo(function Bubble({ row, side, pos }: { row: Row; side: 'left' | 'right'; pos: string }) {
   const b = row.body as MessageBody;
   return (
     <div className={`bubble-wrap is-${side}`}>
+      {b.attachments && b.attachments.length > 0 && <Attachments botId={row.botId} items={b.attachments} side={side} />}
+      {(b.text || b.streaming || !b.attachments?.length) && (
       <div className={`bubble is-${side === 'right' ? 'user' : 'agent'}${pos}${b.streaming ? ' is-streaming' : ''}`}>
         {side === 'right' ? <div className="bubble__plain">{b.text}</div> : <Markdown text={b.text || ' '} />}
         {b.citations && b.citations.length > 0 && (
@@ -73,6 +96,7 @@ const Bubble = memo(function Bubble({ row, side, pos }: { row: Row; side: 'left'
           </div>
         )}
       </div>
+      )}
       <span className="bubble__time">
         {clock(row.createdAt)}
         {side === 'left' && !b.streaming && b.text && typeof speechSynthesis !== 'undefined' && (

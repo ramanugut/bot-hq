@@ -10,6 +10,7 @@ import { hub } from './lib/hub.js';
 import { createSession, destroySession, isOwnerKey, requireUser, userFromCookieHeader, type AuthVars } from './lib/auth.js';
 import { allLive, appendRow, archiveChat, clearConversation, deleteChat, listChats, mergeChats, openChat, renameChat, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
+import { LIBRARY_ROOT } from './agent/tools.js';
 import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
 import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
@@ -19,7 +20,7 @@ import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
-import type { AvatarColor, AvatarShape, Toolkit } from './types.js';
+import type { Attachment, AvatarColor, AvatarShape, Toolkit } from './types.js';
 import { chatgptUsage } from './usage.js';
 import { markPresent, notify, pushPublicKey, removeSubscription, saveSubscription } from './push.js';
 import { checkPassword, hashPassword, noteFailure, tooManyTries } from './lib/password.js';
@@ -350,13 +351,28 @@ api.get('/bots/:id/rows', (c) => {
 api.post('/bots/:id/messages', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const { text } = await c.req.json<{ text: string }>();
-  if (!text?.trim()) return c.json({ error: 'empty' }, 400);
-  const row = appendRow(b.id, 'message', { type: 'message', role: 'user', text: text.trim() });
+  const { text, attachments } = await c.req.json<{ text: string; attachments?: { name?: string; path?: string; size?: number }[] }>();
+  // Attachments are files already uploaded to this bot's Library (uploads/...).
+  const files: Attachment[] = (Array.isArray(attachments) ? attachments : []).slice(0, 20).flatMap((a) => {
+    const path = String(a?.path ?? '');
+    if (!/^uploads\/[^/]+$/.test(path) || path.includes('..')) return [];
+    const ext = path.split('.').pop()!.toLowerCase();
+    const kind: Attachment['kind'] = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'heic', 'heif'].includes(ext) ? 'image'
+      : ['mp4', 'webm', 'mov', 'm4v', '3gp'].includes(ext) ? 'video' : ['mp3', 'm4a', 'wav', 'ogg', 'oga', 'opus', 'aac'].includes(ext) ? 'audio' : 'file';
+    return [{ name: String(a?.name ?? path.slice(8)).slice(0, 120), path, kind, ...(Number.isFinite(a?.size) ? { size: Number(a!.size) } : {}) }];
+  });
+  const typed = (text ?? '').trim();
+  if (!typed && !files.length) return c.json({ error: 'empty' }, 400);
+  const row = appendRow(b.id, 'message', { type: 'message', role: 'user', text: typed, ...(files.length ? { attachments: files } : {}) });
+  // The bot gets the files as paths on its computer, with a hint for how to look at each kind.
+  const how: Record<Attachment['kind'], string> = { image: 'image: look at it with your vision tool', video: 'video: ffmpeg can pull frames or the sound', audio: 'audio', file: 'read it with read_document' };
+  const forBot = files.length
+    ? `${typed || 'Here are some files.'}\n\nAttached files (saved on your computer):\n${files.map((f) => `- ${LIBRARY_ROOT}/${b.id}/${f.path} (${how[f.kind]})`).join('\n')}`
+    : typed;
   // Group chats dispatch to their member Bots instead of running their own loop.
-  if (b.kind === 'room') dispatchRoomMessage(b.id, text.trim(), enqueue);
+  if (b.kind === 'room') dispatchRoomMessage(b.id, forBot, enqueue);
   // Any pending question card is answered by a free-text message.
-  else enqueue(b.id, { type: 'user', text: text.trim() });
+  else enqueue(b.id, { type: 'user', text: forBot });
   return c.json({ row });
 });
 

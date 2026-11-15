@@ -20,6 +20,11 @@ const RECIPES = [
 ];
 const drafts = new Map<string, string>();
 
+interface PickedFile { id: string; name: string; size: number; type: string; preview?: string; rel?: string; error?: string }
+
+const fileIcon = (type: string, name: string) =>
+  type.startsWith('audio/') ? '🎵' : /\.pdf$/i.test(name) ? '📄' : /\.(xlsx?|csv)$/i.test(name) ? '📊' : /\.(docx?|txt|md)$/i.test(name) ? '📝' : '📎';
+
 export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const [text, setText] = useState(() => drafts.get(bot.id) ?? '');
   const [sending, setSending] = useState(false);
@@ -29,16 +34,40 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const setModal = useStore((s) => s.setModal);
   const features = useStore((s) => s.features);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [files, setFiles] = useState<{ name: string; path: string }[]>([]);
-  const [uploading, setUploading] = useState(0);
-  const attach = async (list: FileList | null) => {
-    if (!list?.length) return;
-    for (const f of Array.from(list)) {
-      setUploading((n) => n + 1);
-      try { const r = await api.upload(bot.id, f); setFiles((cur) => [...cur, { name: r.name, path: r.path }]); }
-      catch (e) { setError(`${f.name}: ${(e as Error).message}`); }
-      finally { setUploading((n) => n - 1); }
-    }
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
+  /** Files picked for the next message: uploaded straight away, previewed from the device while they upload. */
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const uploading = files.filter((f) => !f.rel && !f.error).length;
+  const attach = async (list: FileList | File[] | null) => {
+    const picked = Array.from(list ?? []);
+    if (!picked.length) return;
+    const items: PickedFile[] = picked.map((f) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: f.name || 'file', size: f.size, type: f.type,
+      preview: /^(image|video)\//.test(f.type) ? URL.createObjectURL(f) : undefined,
+    }));
+    setFiles((cur) => [...cur, ...items]);
+    await Promise.all(picked.map(async (f, i) => {
+      const id = items[i].id;
+      try {
+        const r = await api.upload(bot.id, f);
+        setFiles((cur) => cur.map((x) => (x.id === id ? { ...x, rel: r.rel, name: r.name } : x)));
+      } catch (e) {
+        setFiles((cur) => cur.map((x) => (x.id === id ? { ...x, error: (e as Error).message } : x)));
+      }
+    }));
+  };
+  const removeFile = (id: string) => setFiles((cur) => {
+    const f = cur.find((x) => x.id === id);
+    if (f?.preview) URL.revokeObjectURL(f.preview);
+    return cur.filter((x) => x.id !== id);
+  });
+  // Pasting a screenshot or photo attaches it.
+  const onPaste = (e: React.ClipboardEvent) => {
+    const pasted = Array.from(e.clipboardData.files ?? []);
+    if (pasted.length) { e.preventDefault(); void attach(pasted); }
   };
 
   // Per-bot drafts.
@@ -62,13 +91,14 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   }, []);
 
   const send = async () => {
-    let t = text.trim();
-    if ((!t && !files.length) || sending || uploading) return;
-    if (files.length) t = `${t || 'Here are some files.'}\n\nAttached files (saved on your computer):\n${files.map((f) => `- ${f.path}`).join('\n')}`;
+    const t = text.trim();
+    const ready = files.filter((f) => f.rel);
+    if ((!t && !ready.length) || sending || uploading) return;
     setSending(true); setError(null);
     try {
-      await api.send(bot.id, t);
+      await api.send(bot.id, t, ready.map((f) => ({ name: f.name, path: f.rel!, size: f.size })));
       setText('');
+      files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
       setFiles([]);
       drafts.delete(bot.id);
     } catch (e) {
@@ -100,27 +130,47 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const freeDictation = useBrowserDictation(insertText, setError, bot.voiceLanguage);
   const inCall = useVoice((s) => isCallActive(s) && s.botId === bot.id);
 
-  const hasText = text.trim().length > 0 || files.length > 0;
+  const hasText = text.trim().length > 0 || files.some((f) => f.rel);
   const multiline = text.includes('\n') || (ref.current?.scrollHeight ?? 0) > 30;
 
   return (
     <div className="composer-area">
       {error && <div className="composer__error">{error} <button type="button" className="link-btn" onClick={() => setError(null)}>Dismiss</button></div>}
-      {(files.length > 0 || uploading > 0) && (
+      {files.length > 0 && (
         <div className="composer__files">
           {files.map((f) => (
-            <span key={f.path} className="composer__file">
-              {f.name}
-              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles((cur) => cur.filter((x) => x.path !== f.path))}>×</button>
+            <span key={f.id} className={`composer__file${f.preview ? ' has-thumb' : ''}${f.error ? ' is-error' : ''}${!f.rel && !f.error ? ' is-busy' : ''}`} title={f.error ?? f.name}>
+              {f.preview && (f.type.startsWith('video/')
+                ? <video className="composer__thumb" src={f.preview} muted playsInline preload="metadata" />
+                : <img className="composer__thumb" src={f.preview} alt="" />)}
+              {!f.preview && <span className="composer__file-name">{fileIcon(f.type, f.name)} {f.name}</span>}
+              {!f.rel && !f.error && <span className="composer__spinner" aria-label="Uploading" />}
+              {f.error && <span className="composer__file-err">Failed</span>}
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => removeFile(f.id)}>×</button>
             </span>
           ))}
-          {uploading > 0 && <span className="composer__file is-busy">Uploading…</span>}
         </div>
       )}
       <div className={`composer${multiline ? ' is-multiline' : ''}`}
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => { e.preventDefault(); void attach(e.dataTransfer.files); }}>
         <div className="composer__left">
+          <span className="composer__plus-anchor">
+            <button type="button" className="composer__btn" onClick={() => setAttachOpen(!attachOpen)} aria-label="Attach" aria-expanded={attachOpen} title="Attach photos, videos or files">
+              <svg width="19" height="19" viewBox="0 0 20 20" aria-hidden style={{ opacity: 0.6 }}><path d="M14.5 9.5 9.6 14.4a3.2 3.2 0 0 1-4.5-4.5l5.6-5.6a2.1 2.1 0 0 1 3 3l-5.6 5.6a1 1 0 0 1-1.5-1.5l5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+            {attachOpen && (
+              <Menu
+                placement="above"
+                onClose={() => setAttachOpen(false)}
+                items={[
+                  { label: '🖼️  Photos & videos', onSelect: () => galleryRef.current?.click() },
+                  { label: '📷  Take a photo', onSelect: () => cameraRef.current?.click() },
+                  { label: '📎  Files', onSelect: () => fileRef.current?.click() },
+                ]}
+              />
+            )}
+          </span>
           <span className="composer__plus-anchor">
             <button type="button" className="composer__btn" onClick={() => setMenu(!menu)} aria-label="More actions" aria-expanded={menu}>
               <Icon name="composer_plus" opacity={0.56} />
@@ -130,7 +180,6 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
                 placement="above"
                 onClose={() => setMenu(false)}
                 items={[
-                  { label: 'Attach files', onSelect: () => fileRef.current?.click() },
                   ...RECIPES.map((r) => ({ label: r.label, onSelect: () => { setText(r.prompt); requestAnimationFrame(() => ref.current?.focus()); } })),
                   { label: 'New conversation', onSelect: fresh },
                   ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
@@ -139,6 +188,8 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
             )}
           </span>
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} />
+          <input ref={galleryRef} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} />
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} />
           <textarea
             ref={ref}
             className="composer__input"
@@ -146,6 +197,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
             value={text}
             placeholder={`Message ${displayName(bot)}`}
             onChange={(e) => setText(e.target.value)}
+            onPaste={onPaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
             }}
