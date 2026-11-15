@@ -45,6 +45,8 @@ interface State {
 
 const LS_SELECTED = 'grokbot.selectedBot';
 const LS_DETAILS = 'grokbot.detailsOpen';
+/** Phone-sized screen: one pane at a time, the sidebar and details slide over the chat. */
+export const isPhone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 760px)').matches;
 const LS_SIDEBAR = 'grokbot.sidebarCollapsed';
 const lsGet = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
@@ -62,8 +64,8 @@ export const useStore = create<State>((set, get) => ({
   computer: null,
   connectionsVersion: 0,
   sseConnected: false,
-  detailsOpen: lsGet(LS_DETAILS) !== '0',
-  sidebarCollapsed: lsGet(LS_SIDEBAR) === '1',
+  detailsOpen: isPhone() ? false : lsGet(LS_DETAILS) !== '0',
+  sidebarCollapsed: isPhone() ? !!lsGet(LS_SELECTED) : lsGet(LS_SIDEBAR) === '1',
   modal: null,
   viewerOpen: false,
   viewerMode: 'watch',
@@ -185,8 +187,9 @@ export const useStore = create<State>((set, get) => ({
   setModal(modal) { set({ modal }); },
 
   set(p) {
-    if (p.detailsOpen !== undefined) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
-    if (p.sidebarCollapsed !== undefined) lsSet(LS_SIDEBAR, p.sidebarCollapsed ? '1' : '0');
+    // On a phone these are momentary (open a drawer, close it again): don't remember them for the desktop.
+    if (p.detailsOpen !== undefined && !isPhone()) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
+    if (p.sidebarCollapsed !== undefined && !isPhone()) lsSet(LS_SIDEBAR, p.sidebarCollapsed ? '1' : '0');
     set(p);
   },
 }));

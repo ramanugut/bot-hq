@@ -208,8 +208,12 @@
 
 @media (max-width: 760px) {
   .cfg-grid { grid-template-columns: 1fr; }
-  .cfg-nav { width: 132px; }
-  .app-settings__nav { width: 180px; }
+  /* Full-screen sheets with the section tabs in a row on top */
+  .bot-settings { width: 100vw; max-width: 100vw; height: 100dvh; border-radius: 0; }
+  .bot-settings__body, .app-settings__body { flex-direction: column; }
+  .cfg-nav, .app-settings__nav { flex-direction: row; width: auto; overflow-x: auto; padding: 8px; gap: 4px; border-right: 0; border-bottom: 0.5px solid var(--color-border-tertiary); flex-shrink: 0; scrollbar-width: none; }
+  .cfg-nav__item { width: auto; white-space: nowrap; flex-shrink: 0; }
+  .cfg-page { padding: 16px; }
 }
 
 /* knob contrasts with the "on" track (matters for black bots in dark mode) */

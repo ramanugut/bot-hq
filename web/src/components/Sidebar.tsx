@@ -3,7 +3,7 @@ import { useConfigUI } from '../configStore';
 import { TasksIsland } from './config/TasksView';
 import type { Bot } from '@shared/types';
 import { BotAvatarFor } from '../avatar/BotAvatar';
-import { displayName, useStore } from '../store';
+import { displayName, isPhone, useStore } from '../store';
 import { api } from '../lib/api';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
@@ -57,7 +57,7 @@ export function Sidebar() {
   const set = useStore((s) => s.set);
   const storeSelectBot = useStore((s) => s.selectBot);
   // Picking a bot (even the one already selected) leaves the Tasks view.
-  const selectBot = useCallback((id: string) => { useConfigUI.getState().setView('chat'); storeSelectBot(id); }, [storeSelectBot]);
+  const selectBot = useCallback((id: string) => { useConfigUI.getState().setView('chat'); storeSelectBot(id); if (isPhone()) useStore.getState().set({ sidebarCollapsed: true }); }, [storeSelectBot]);
   const setModal = useStore((s) => s.setModal);
   const [accountMenu, setAccountMenu] = useState(false);
   const logout = async () => { await api.logout().catch(() => {}); location.reload(); };

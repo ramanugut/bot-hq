@@ -57,6 +57,7 @@ function Shell() {
   return (
     <div className={`app${collapsed ? ' is-sidebar-collapsed' : ''}${detailsOpen && hasBot && view === 'chat' ? ' has-details' : ''}`}>
       <Sidebar />
+      {!collapsed && <div className="drawer-scrim" onClick={() => useStore.getState().set({ sidebarCollapsed: true })} aria-hidden />}
       {view === 'tasks' ? <TasksView /> : <ChatView />}
       {detailsOpen && hasBot && view === 'chat' && <DetailsPanel />}
       {modal === 'create' && <CreateBotModal />}

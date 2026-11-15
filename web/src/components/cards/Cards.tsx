@@ -211,7 +211,7 @@ export function CardRow({ row }: { row: Row }) {
 export function ImageCard({ row, body }: { row: Row; body: Card<'image'> }) {
   const src = `/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}&inline=1`;
   return (
-    <div className="card image-card" style={{ maxWidth: 420 }}>
+    <div className="card image-card" style={{ maxWidth: "min(420px, 100%)", padding: 8 }}>
       <a href={src} target="_blank" rel="noreferrer">
         <img src={src} alt={body.caption ?? body.path} loading="lazy" style={{ width: '100%', height: 'auto', borderRadius: 10, display: 'block' }} />
       </a>

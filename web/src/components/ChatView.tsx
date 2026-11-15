@@ -36,6 +36,9 @@ export function ChatView() {
       <VoiceCallBar />
       <Composer bot={bot} running={!!live?.isRunning} />
       <header className="chat__header">
+        <button type="button" className="icon-btn icon-btn--bordered chat__menu-btn" onClick={() => set({ sidebarCollapsed: false })} aria-label="Show bots">
+          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden><path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+        </button>
         <span className="chat__pill-anchor">
           <button type="button" className="chat__pill" onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}>
             <BotAvatarFor bot={bot} size={24} />
@@ -60,7 +63,6 @@ export function ChatView() {
               <Icon name="sidebar" opacity={0.66} style={{ transform: 'scaleX(-1)' }} />
             </button>
           )}
-          <button type="button" className="share-btn" onClick={() => flash('Sharing isn’t available in Grokbot yet')}>Share</button>
         </div>
       </header>
       {toast && <div className="toast" role="status">{toast}</div>}
