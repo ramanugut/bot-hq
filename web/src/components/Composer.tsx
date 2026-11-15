@@ -6,6 +6,7 @@ import { Icon } from './Icon';
 import { Menu } from './Menu';
 import { endCall, isCallActive, startCall, useVoice } from '../voice/call';
 import { useDictation } from '../voice/dictation';
+import { browserDictationSupported, useBrowserDictation } from '../voice/browserDictation';
 
 const MAX_H = 200;
 const drafts = new Map<string, string>();
@@ -17,6 +18,19 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const setModal = useStore((s) => s.setModal);
+  const features = useStore((s) => s.features);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<{ name: string; path: string }[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const attach = async (list: FileList | null) => {
+    if (!list?.length) return;
+    for (const f of Array.from(list)) {
+      setUploading((n) => n + 1);
+      try { const r = await api.upload(bot.id, f); setFiles((cur) => [...cur, { name: r.name, path: r.path }]); }
+      catch (e) { setError(`${f.name}: ${(e as Error).message}`); }
+      finally { setUploading((n) => n - 1); }
+    }
+  };
 
   // Per-bot drafts.
   useEffect(() => { setText(drafts.get(bot.id) ?? ''); setError(null); ref.current?.focus(); }, [bot.id]);
@@ -39,12 +53,14 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   }, []);
 
   const send = async () => {
-    const t = text.trim();
-    if (!t || sending) return;
+    let t = text.trim();
+    if ((!t && !files.length) || sending || uploading) return;
+    if (files.length) t = `${t || 'Here are some files.'}\n\nAttached files (saved on your computer):\n${files.map((f) => `- ${f.path}`).join('\n')}`;
     setSending(true); setError(null);
     try {
       await api.send(bot.id, t);
       setText('');
+      setFiles([]);
       drafts.delete(bot.id);
     } catch (e) {
       setError((e as Error).message || 'Message failed to send');
@@ -72,15 +88,29 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
     });
   };
   const dictation = useDictation(insertText, setError, bot.voiceLanguage);
+  const freeDictation = useBrowserDictation(insertText, setError, bot.voiceLanguage);
   const inCall = useVoice((s) => isCallActive(s) && s.botId === bot.id);
 
-  const hasText = text.trim().length > 0;
+  const hasText = text.trim().length > 0 || files.length > 0;
   const multiline = text.includes('\n') || (ref.current?.scrollHeight ?? 0) > 30;
 
   return (
     <div className="composer-area">
       {error && <div className="composer__error">{error} <button type="button" className="link-btn" onClick={() => setError(null)}>Dismiss</button></div>}
-      <div className={`composer${multiline ? ' is-multiline' : ''}`}>
+      {(files.length > 0 || uploading > 0) && (
+        <div className="composer__files">
+          {files.map((f) => (
+            <span key={f.path} className="composer__file">
+              {f.name}
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => setFiles((cur) => cur.filter((x) => x.path !== f.path))}>×</button>
+            </span>
+          ))}
+          {uploading > 0 && <span className="composer__file is-busy">Uploading…</span>}
+        </div>
+      )}
+      <div className={`composer${multiline ? ' is-multiline' : ''}`}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); void attach(e.dataTransfer.files); }}>
         <div className="composer__left">
           <span className="composer__plus-anchor">
             <button type="button" className="composer__btn" onClick={() => setMenu(!menu)} aria-label="More actions" aria-expanded={menu}>
@@ -91,12 +121,14 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
                 placement="above"
                 onClose={() => setMenu(false)}
                 items={[
+                  { label: 'Attach files', onSelect: () => fileRef.current?.click() },
                   { label: 'New conversation', onSelect: fresh },
-                  { label: 'Connect apps', onSelect: () => setModal('apps') },
+                  ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
                 ]}
               />
             )}
           </span>
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} />
           <textarea
             ref={ref}
             className="composer__input"
@@ -111,6 +143,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           />
         </div>
         <div className="composer__right">
+          {features.voice ? (
           <button
             type="button"
             className={`composer__btn${dictation.state === 'recording' ? ' is-recording' : dictation.state === 'transcribing' ? ' is-transcribing' : ''}`}
@@ -125,6 +158,11 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           >
             <Icon name="mic" opacity={0.56} />
           </button>
+          ) : browserDictationSupported() ? (
+            <button type="button" className={`composer__btn${freeDictation.recording ? ' is-recording' : ''}`} onClick={freeDictation.toggle} aria-label={freeDictation.recording ? 'Stop dictation' : 'Dictate'} aria-pressed={freeDictation.recording} title={freeDictation.recording ? 'Tap to stop' : 'Tap to dictate'}>
+              <Icon name="mic" opacity={0.56} />
+            </button>
+          ) : null}
           {inCall && !hasText ? (
             <button type="button" className="composer__cta is-in-call" onClick={endCall} aria-label="End voice call" title="End voice call">
               <Icon name="voice_a" size={16} />
@@ -137,12 +175,12 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
             <button
               type="button"
               className="composer__cta"
-              onClick={hasText ? send : () => startCall(bot.id)}
-              disabled={hasText && sending}
+              onClick={hasText ? send : features.voice ? () => startCall(bot.id) : () => ref.current?.focus()}
+              disabled={(hasText && sending) || uploading > 0}
               aria-label={hasText ? 'Send' : `Start voice chat with ${bot.name}`}
               title={hasText ? 'Send (Enter)' : 'Start voice chat'}
             >
-              <Icon name={hasText ? 'arrow_up' : 'voice_a'} size={16} />
+              <Icon name={hasText || !features.voice ? 'arrow_up' : 'voice_a'} size={16} />
             </button>
           )}
         </div>

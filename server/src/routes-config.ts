@@ -260,6 +260,22 @@ configApi.post('/bots/:id/files/download', async (c) => {
   }
 });
 
+// Files the user hands a bot (CVs, logos, photos). They land in the bot's Library under uploads/.
+configApi.post('/bots/:id/upload', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const body = await c.req.parseBody().catch(() => null);
+  const f = body?.file;
+  if (!f || typeof f === 'string') return c.json({ error: 'no file' }, 400);
+  if (f.size > 25 * 1024 * 1024) return c.json({ error: 'Files can be up to 25 MB.' }, 413);
+  const base = (f.name || 'file').replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/\s+/g, '-').slice(-100) || 'file';
+  const dir = `${LIB_ROOT}/${b.id}/uploads`;
+  let name = base;
+  for (let i = 2; fs.existsSync(`${dir}/${name}`); i++) name = base.replace(/(\.[^.]*)?$/, `-${i}$1`);
+  await box.writeFile(`${dir}/${name}`, Buffer.from(await f.arrayBuffer()));
+  return c.json({ ok: true, path: `${dir}/${name}`, name, size: f.size });
+});
+
 configApi.get('/bots/:id/files/raw', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b || !box.local) return c.json({ error: 'not found' }, 404);

@@ -73,6 +73,8 @@ export const env = {
   primaryCdpUrl: process.env.PRIMARY_CDP_URL ?? '',
   /** Bots that can each have a screen (Orgo allows four screens on one Linux computer). */
   maxBots: Number(process.env.MAX_BOTS ?? 4),
+  /** Hermes approvals.mode for the bots this app starts ('off' = no prompts, which nobody could answer anyway). Empty = leave Hermes' setting. */
+  agentApprovals: process.env.HQ_AGENT_APPROVALS ?? (localScreens ? 'off' : ''),
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 };

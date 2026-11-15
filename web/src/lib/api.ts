@@ -25,7 +25,13 @@ export interface AppsResponse { apps: Toolkit[]; connected: string[]; categories
 export interface RoomMember { id: string; name: string; label: string; avatarShape: string; avatarColor: string }
 
 export const api = {
-  me: () => req<{ user: User | null; devLogin: boolean; googleLogin?: boolean }>('GET', '/auth/me'),
+  me: () => req<{ user: User | null; devLogin: boolean; googleLogin?: boolean; features?: { voice: boolean; apps: boolean } }>('GET', '/auth/me'),
+  upload: async (botId: string, file: File) => {
+    const fd = new FormData(); fd.append('file', file);
+    const res = await fetch(`/api/bots/${botId}/upload`, { method: 'POST', credentials: 'include', body: fd });
+    if (!res.ok) { let m = res.statusText; try { m = (await res.json()).error ?? m; } catch { /* */ } throw new ApiError(res.status, m); }
+    return res.json() as Promise<{ ok: true; path: string; name: string; size: number }>;
+  },
   passwordLogin: (email: string, password: string) => req<{ ok: true }>('POST', '/auth/password', { email, password }),
   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
   setTimezone: (tz: string) => req<{ ok: true }>('POST', '/me/timezone', { tz }),

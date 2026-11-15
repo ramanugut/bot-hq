@@ -47,6 +47,7 @@ function RoutineRow({ r }: { r: Routine }) {
 }
 
 export function DetailsPanel() {
+  const features = useStore((st) => st.features);
   const bot = useSelectedBot();
   const routines = useStore((s) => (bot ? s.routines[bot.id] : undefined));
   const computer = useStore((s) => s.computer);
@@ -120,7 +121,7 @@ export function DetailsPanel() {
                 <MembersCard room={bot} />
               </section>
             )}
-            {bot.kind !== 'room' && !hideSuggested && (
+            {bot.kind !== 'room' && !hideSuggested && features.apps && (
               <section>
                 <div className="section-label section-label--row">
                   <span>Suggested</span>
@@ -141,10 +142,12 @@ export function DetailsPanel() {
                   <div className="section-label">Engine</div>
                   <EngineSettings bot={bot} />
                 </section>
-                <section>
+                {features.voice && (
+<section>
                   <div className="section-label">Voice chat</div>
                   <VoiceSettings bot={bot} />
                 </section>
+)}
               </>
             )}
           </div>

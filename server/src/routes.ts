@@ -65,7 +65,7 @@ function findOrCreateUser(email: string, name?: string, preferId?: string) {
 
 api.get('/auth/me', (c) => {
   const user = userFromCookieHeader(c.req.header('cookie'));
-  return c.json({ user, devLogin: env.devLogin, googleLogin: hasComposio, passwordLogin: true });
+  return c.json({ user, devLogin: env.devLogin, googleLogin: hasComposio, passwordLogin: true, features: { voice: !!env.xaiKey, apps: hasComposio } });
 });
 
 // ---------- email + password ----------

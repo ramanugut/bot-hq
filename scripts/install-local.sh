@@ -72,6 +72,8 @@ for t in ('hermes-api-server', 'computer_use'):
     if t not in cur:
         cur.append(t)
 pt['api_server'] = cur
+# Nobody can answer Hermes' own approval prompts through the app; bots ask in the chat instead.
+c.setdefault('approvals', {})['mode'] = 'off'
 shutil.copy2(p, f'{p}.before-hq-{int(time.time())}')
 yaml.safe_dump(c, open(p, 'w'), sort_keys=False)
 PY

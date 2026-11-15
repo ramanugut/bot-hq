@@ -159,7 +159,7 @@ export const TOOLS: ToolDef[] = [
       db.prepare('INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at) VALUES (?,?,?,?,?,?,1,?)').run(id, ctx.botId, a.name, a.prompt, sched, tz, now());
       const r = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(id));
       scheduleRoutine(r);
-      appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${a.name} · ${describeCron(sched)}`, ref: id });
+      appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${a.name} · ${describeCron(sched, tz)}`, ref: id });
       hub.emit(ctx.userId, { type: 'routines', botId: ctx.botId });
       return { output: JSON.stringify({ ok: true, routine: r }), summary: `Created routine ${a.name}` };
     },

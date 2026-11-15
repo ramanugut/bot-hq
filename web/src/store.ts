@@ -10,6 +10,8 @@ interface State {
   user: User | null;
   devLogin: boolean;
   googleLogin: boolean;
+  /** Paid add-ons that are switched on: xAI voice, Composio apps. */
+  features: { voice: boolean; apps: boolean };
   authChecked: boolean;
 
   bots: Bot[];
@@ -55,6 +57,7 @@ export const useStore = create<State>((set, get) => ({
   user: null,
   devLogin: false,
   googleLogin: false,
+  features: { voice: false, apps: false },
   authChecked: false,
   bots: [],
   live: {},
@@ -73,8 +76,8 @@ export const useStore = create<State>((set, get) => ({
 
   async checkAuth() {
     try {
-      const { user, devLogin, googleLogin } = await api.me();
-      set({ user, devLogin, googleLogin: !!googleLogin, authChecked: true });
+      const { user, devLogin, googleLogin, features } = await api.me();
+      set({ user, devLogin, googleLogin: !!googleLogin, features: features ?? { voice: false, apps: false }, authChecked: true });
       if (user) { try { void api.setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone).catch(() => {}); } catch { /* old browser */ } }
     } catch {
       set({ user: null, authChecked: true });

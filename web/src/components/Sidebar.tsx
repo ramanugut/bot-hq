@@ -55,6 +55,7 @@ export function Sidebar() {
   const user = useStore((s) => s.user);
   const collapsed = useStore((s) => s.sidebarCollapsed);
   const set = useStore((s) => s.set);
+  const features = useStore((s) => s.features);
   const storeSelectBot = useStore((s) => s.selectBot);
   // Picking a bot (even the one already selected) leaves the Tasks view.
   const selectBot = useCallback((id: string) => { useConfigUI.getState().setView('chat'); storeSelectBot(id); if (isPhone()) useStore.getState().set({ sidebarCollapsed: true }); }, [storeSelectBot]);
@@ -68,7 +69,6 @@ export function Sidebar() {
   return (
     <aside className={`sidebar${collapsed ? ' is-collapsed' : ''}`}>
       <div className="sidebar__titlebar">
-        <TrafficLights />
         <div className="sidebar__controls">
           <button type="button" className="icon-btn icon-btn--plain" onClick={() => set({ sidebarCollapsed: !collapsed })} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} title="Toggle sidebar (⌘B)">
             <Icon name="sidebar" opacity={0.66} />
@@ -135,7 +135,7 @@ export function Sidebar() {
                 onClose={() => setAccountMenu(false)}
                 items={[
                   { label: 'Settings', hint: '⌘,', onSelect: () => useConfigUI.getState().openAppSettings() },
-                  { label: 'Connect apps', onSelect: () => setModal('apps') },
+                  ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
                   { label: 'Log out', danger: true, onSelect: logout },
                 ]}
               >
@@ -144,9 +144,11 @@ export function Sidebar() {
             )}
           </div>
         )}
-        <button type="button" className="icon-btn icon-btn--bordered" onClick={() => setModal('apps')} aria-label="Connect apps" title="Connect apps">
-          <Icon name="apps" />
-        </button>
+        {features.apps && (
+          <button type="button" className="icon-btn icon-btn--bordered" onClick={() => setModal('apps')} aria-label="Connect apps" title="Connect apps">
+            <Icon name="apps" />
+          </button>
+        )}
       </div>
     </aside>
   );

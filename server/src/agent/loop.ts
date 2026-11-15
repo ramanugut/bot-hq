@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { db, now } from '../db.js';
 import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
@@ -364,6 +365,15 @@ async function runTurn(botId: string, trigger: Trigger) {
     if (ctrl.signal.aborted) throw new Error('interrupted');
 
     let input = triggerText(trigger);
+    // Hermes keeps a conversation's system prompt fixed, so changed instructions or skills would only
+    // apply in a new chat. Tell the bot about the change in the message itself instead.
+    const skillRows = db.prepare('SELECT name, body FROM skills WHERE bot_id=? ORDER BY created_at').all(botId) as any[];
+    const sig = crypto.createHash('sha1').update(JSON.stringify([bot.instructions ?? '', skillRows])).digest('hex');
+    if (bot.instructions_sig && bot.instructions_sig !== sig) {
+      const skillsText = skillRows.map((r) => `### ${r.name}\n${r.body}`).join('\n\n');
+      input = `[Note from the app: your instructions or skills were just changed. From now on follow these, replacing any earlier version.\n## Instructions\n${bot.instructions || '(none)'}${skillsText ? `\n## Skills\n${skillsText}` : ''}]\n\n${input}`;
+    }
+    if (bot.instructions_sig !== sig) db.prepare('UPDATE bots SET instructions_sig=? WHERE id=?').run(sig, botId);
     if (bot.handback_at) {
       input = `[Note: the user took control of your screen for a while and has just handed it back. Look at the screen before you rely on what was there.]\n\n${input}`;
       db.prepare('UPDATE bots SET handback_at=NULL WHERE id=?').run(botId);

@@ -157,8 +157,8 @@ export const allLive = (userId: string) => listBots(userId).map((b) => getLive(b
 
 // ---------- routines / tasks ----------
 
-export function describeCron(expr: string): string {
-  if (isOnceSchedule(expr)) return `Once, ${new Date(expr).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })} UTC`;
+export function describeCron(expr: string, tz = 'UTC'): string {
+  if (isOnceSchedule(expr)) { let z = tz; try { new Intl.DateTimeFormat('en', { timeZone: z }); } catch { z = 'UTC'; } return `Once, ${new Date(expr).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short', timeZone: z })}`; }
   const p = expr.trim().split(/\s+/);
   if (p.length !== 5) return expr;
   const [m, h, dom, mon, dow] = p;
@@ -185,7 +185,7 @@ export function toRoutine(r: any): Routine {
   } catch { /* invalid cron */ }
   return {
     id: r.id, botId: r.bot_id, name: r.name, prompt: r.prompt, schedule: r.schedule, timezone: r.timezone,
-    enabled: !!r.enabled, nextRunAt, lastRunAt: r.last_run_at, description: r.schedule.startsWith('event:') ? describeEventSlug(r.schedule) : describeCron(r.schedule),
+    enabled: !!r.enabled, nextRunAt, lastRunAt: r.last_run_at, description: r.schedule.startsWith('event:') ? describeEventSlug(r.schedule) : describeCron(r.schedule, r.timezone),
   };
 }
 

@@ -145,6 +145,8 @@ function addColumn(table: string, col: string, ddl: string) {
 }
 addColumn('users', 'password_hash', 'TEXT');
 addColumn('users', 'timezone', 'TEXT');
+// What the bot's engine conversation last saw of its instructions and skills (see loop.ts).
+addColumn('bots', 'instructions_sig', 'TEXT');
 addColumn('bots', 'voice', "TEXT NOT NULL DEFAULT 'luna'");
 addColumn('bots', 'voice_speed', 'REAL NOT NULL DEFAULT 1');
 addColumn('bots', 'voice_language', "TEXT NOT NULL DEFAULT 'auto'");
