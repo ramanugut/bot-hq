@@ -1,6 +1,6 @@
 {
-  "name": "Bot HQ",
-  "short_name": "Bot HQ",
+  "name": "Botly",
+  "short_name": "Botly",
   "description": "Your AI bots, each with its own computer.",
   "start_url": "/",
   "scope": "/",

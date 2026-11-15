@@ -34,7 +34,7 @@ export function SignIn() {
         <div className="signin__hero">
           <BotAvatar shape="blob" color="black" size={84} />
         </div>
-        <h1 className="signin__title">Bot HQ</h1>
+        <h1 className="signin__title">Botly</h1>
         <p className="signin__sub">AI teammates with their own computers. Hand them a task and they get it done.</p>
         <form className="signin__dev" onSubmit={signIn}>
           <input className="text-input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" autoComplete="username" />

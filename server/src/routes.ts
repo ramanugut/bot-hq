@@ -212,7 +212,7 @@ api.post('/push/unsubscribe', async (c) => {
   if (endpoint) removeSubscription(c.get('user').id, endpoint);
   return c.json({ ok: true });
 });
-api.post('/push/test', async (c) => { await notify(c.get('user').id, { title: 'Bot HQ', body: 'Notifications are working.', tag: 'test' }, true); return c.json({ ok: true }); });
+api.post('/push/test', async (c) => { await notify(c.get('user').id, { title: 'Botly', body: 'Notifications are working.', tag: 'test' }, true); return c.json({ ok: true }); });
 // The app window is visible: hold back notifications for things the user can already see.
 // Backups made by scripts/backup.sh (nightly). The newest one can be downloaded from the app.
 api.get('/backups/latest', (c) => {

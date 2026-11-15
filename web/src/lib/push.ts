@@ -16,7 +16,7 @@ export async function pushEnabled(): Promise<boolean> {
 }
 
 export async function enablePush(): Promise<string> {
-  if (!pushSupported()) return /iPhone|iPad/.test(navigator.userAgent) ? 'On iPhone, first add Bot HQ to your Home Screen (Share → Add to Home Screen), then turn notifications on from the app.' : 'This browser can’t show notifications.';
+  if (!pushSupported()) return /iPhone|iPad/.test(navigator.userAgent) ? 'On iPhone, first add Botly to your Home Screen (Share → Add to Home Screen), then turn notifications on from the app.' : 'This browser can’t show notifications.';
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') return 'Notifications are blocked. Allow them for this site in your browser settings.';
   const reg = (await navigator.serviceWorker.getRegistration()) ?? (await navigator.serviceWorker.register('/sw.js'));
