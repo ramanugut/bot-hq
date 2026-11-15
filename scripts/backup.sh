@@ -34,8 +34,9 @@ tar --warning=no-file-changed -czf "$partial" \
   -C "$tmp" database-backup.db
 # Publish only a complete archive, keeping old backups on any failure.
 tar -tzf "$partial" >/dev/null
-tar -tzf "$partial" | grep -Fxq "database-backup.db"
-tar -tzf "$partial" | grep -Fxq "opt/hq/app/.env"
+tar -tzf "$partial" > "$tmp/contents.txt"
+grep -Fxq "database-backup.db" "$tmp/contents.txt"
+grep -Fxq "opt/hq/app/.env" "$tmp/contents.txt"
 chmod 600 "$partial"
 mv -f "$partial" "$OUT/bothq-$stamp.tar.gz"
 ls -1t "$OUT"/bothq-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f

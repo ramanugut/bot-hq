@@ -16,8 +16,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 
-/** Bots with a video rendering right now (one at a time each). */
+/** Only one video render at a time across the small EC2 server. */
 const rendering = new Set<string>();
+const RENDER_TIMEOUT_MS = 10 * 60_000;
+// Survive app restarts: unfinished jobs are explicitly marked interrupted, not silently lost.
+db.exec(`CREATE TABLE IF NOT EXISTS render_jobs (
+  id TEXT PRIMARY KEY,
+  bot_id TEXT NOT NULL,
+  output TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at INTEGER NOT NULL,
+  finished_at INTEGER
+)`);
+const interrupted = db.prepare("SELECT id,bot_id FROM render_jobs WHERE status='running'").all() as { id: string; bot_id: string }[];
+db.prepare("UPDATE render_jobs SET status='interrupted', finished_at=? WHERE status='running'").run(now());
+for (const job of interrupted) {
+  try { appendRow(job.bot_id, 'notice', { type: 'notice', text: 'A video render was interrupted by a server restart. Please start the render again.', tone: 'error' }); } catch { /* bot may have been deleted */ }
+}
 
 const hyperframesBin = () => (fs.existsSync('/usr/local/bin/hyperframes') ? '/usr/local/bin/hyperframes' : '/opt/hq/node/bin/hyperframes');
 
@@ -29,17 +44,38 @@ function startRender(botId: string, cmd: string, args: string[], out: string, ca
     HYPERFRAMES_NO_TELEMETRY: '1', HYPERFRAMES_NO_UPDATE_CHECK: '1', HYPERFRAMES_SKIP_SKILLS: '1',
     ...(fs.existsSync('/usr/local/bin/chromium') && !process.env.HYPERFRAMES_BROWSER_PATH ? { HYPERFRAMES_BROWSER_PATH: '/usr/local/bin/chromium' } : {}),
   };
-  const p = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  const jobId = newId('render');
+  db.prepare('INSERT INTO render_jobs(id,bot_id,output,status,started_at) VALUES (?,?,?,?,?)').run(jobId, botId, out, 'running', now());
+  let p: ReturnType<typeof spawn>;
+  try { p = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true }); }
+  catch (e) { db.prepare("UPDATE render_jobs SET status='failed',finished_at=? WHERE id=?").run(now(), jobId); cleanup?.(); throw e; }
   rendering.add(botId);
   let log = '';
+  let finished = false;
+  let timedOut = false;
+  const terminateGroup = (signal: NodeJS.Signals) => {
+    if (!p.pid) return;
+    try { process.kill(-p.pid, signal); } catch { try { p.kill(signal); } catch { /* already exited */ } }
+  };
+  const watchdog = setTimeout(() => {
+    timedOut = true;
+    log += '\nRendering exceeded the 10-minute safety limit.';
+    terminateGroup('SIGTERM');
+    setTimeout(() => terminateGroup('SIGKILL'), 5000).unref();
+  }, RENDER_TIMEOUT_MS);
+  watchdog.unref();
   p.stdout.on('data', (d) => { log = (log + d).slice(-20000); });
   p.stderr.on('data', (d) => { log = (log + d).slice(-20000); });
   const started = Date.now();
   const done = async (code: number | null) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(watchdog);
     rendering.delete(botId);
+    db.prepare('UPDATE render_jobs SET status=?, finished_at=? WHERE id=?').run(code === 0 && !timedOut && fs.existsSync(out) ? 'completed' : 'failed', now(), jobId);
     cleanup?.();
     const secs = Math.round((Date.now() - started) / 1000);
-    if (code === 0 && fs.existsSync(out)) {
+    if (code === 0 && !timedOut && fs.existsSync(out)) {
       const r = await postImage(botId, out, `${caption} · ${secs}s to render`);
       if (!r.ok) appendRow(botId, 'notice', { type: 'notice', text: r.message, tone: 'error' });
       const note = /no voice-over|voice-over skipped/.test(log) ? ' (without voice-over: the voice service did not answer)' : '';
@@ -280,11 +316,11 @@ export const TOOLS: ToolDef[] = [
     impl: async (a, ctx) => {
       if (!box.local) return { output: 'Video rendering runs only on the self-hosted server.' };
       const brief = typeof a.brief === 'string' ? (() => { try { return JSON.parse(a.brief); } catch { return null; } })() : a.brief;
-      if (!brief || !Array.isArray(brief.scenes) || !brief.scenes.length) return { output: 'The brief needs a scenes list (see the tool description).' };
+      if (!brief || !Array.isArray(brief.scenes) || !brief.scenes.length || brief.scenes.length > 12 || JSON.stringify(brief).length > 128_000) return { output: 'A video brief must contain 1 to 12 scenes and be smaller than 128 KB.' };
       const files = [brief.brand?.logo, brief.music, ...brief.scenes.flatMap((s: any) => [s?.image, s?.video, s?.avatar, s?.screenshot, s?.before?.image, s?.after?.image])].filter(Boolean);
       const missing = files.filter((f: string) => !fs.existsSync(f));
       if (missing.length) return { output: `These files do not exist: ${missing.join(', ')}. Make or find them first.` };
-      if (rendering.has(ctx.botId)) return { output: 'A video is already rendering for you; it will appear in the chat when done. Wait for it.' };
+      if (rendering.size) return { output: 'A video is already rendering on this server. Try again after it finishes.' };
       const dir = `${LIBRARY_ROOT}/${ctx.botId}`;
       fs.mkdirSync(dir, { recursive: true });
       // No style chosen: take the next one, so a run of videos doesn't all look alike.
@@ -326,7 +362,7 @@ export const TOOLS: ToolDef[] = [
       try { folder = fs.realpathSync(String(a.folder || '')); } catch { return { output: `No folder at ${a.folder}.` }; }
       if (!folder.startsWith(fs.realpathSync(root) + '/')) return { output: `The project must be inside your Library (${root}/...).` };
       if (!fs.existsSync(`${folder}/index.html`)) return { output: `${folder} has no index.html. Start one with: hyperframes init ${folder} --example blank --non-interactive --skip-skills --resolution portrait` };
-      if (rendering.has(ctx.botId)) return { output: 'A video is already rendering for you; wait for it.' };
+      if (rendering.size) return { output: 'A video is already rendering on this server. Try again after it finishes.' };
       const name = (String(a.filename || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]*$/, '') || 'video') + '.mp4';
       const out = `${root}/${name}`;
       const args = ['render', folder, '-o', out, '--quality', a.quality === 'draft' ? 'draft' : 'looks', '--low-memory-mode', '--quiet'];
