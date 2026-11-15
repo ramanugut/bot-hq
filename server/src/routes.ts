@@ -227,11 +227,11 @@ api.post('/backups/latest', async (c) => {
     noteFailure(attemptKey);
     return c.json({ error: 'Confirm your account password before downloading. Set a password in account settings if needed.' }, 403);
   }
-  const dir = '/opt/hq/backups';
+  const dir = '/opt/botly/backups';
   let files: string[] = [];
-  try { files = fs.readdirSync(dir).filter((f) => /^bothq-\d{8}-\d{4}\.tar\.gz$/.test(f)).sort(); } catch { /* none yet */ }
+  try { files = fs.readdirSync(dir).filter((f) => /^(?:botly|bothq)-\d{8}-\d{4}\.tar\.gz$/.test(f)).sort((a, b) => a.slice(a.indexOf('-') + 1).localeCompare(b.slice(b.indexOf('-') + 1))); } catch { /* none yet */ }
   const f = files.pop();
-  if (!f) return c.text('No backup yet. The first one is made tonight, or run: bash /opt/hq/app/scripts/backup.sh', 404);
+  if (!f) return c.text('No backup yet. The first one is made tonight, or run: bash /opt/botly/app/scripts/backup.sh', 404);
   const full = `${dir}/${f}`;
   return new Response(Readable.toWeb(fs.createReadStream(full)) as ReadableStream, { headers: { 'content-type': 'application/gzip', 'content-length': String(fs.statSync(full).size), 'content-disposition': `attachment; filename="${f}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
 });

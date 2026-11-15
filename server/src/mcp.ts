@@ -103,7 +103,7 @@ async function handle(msg: any, botId: string | null): Promise<object | null> {
         result: {
           protocolVersion: SUPPORTED.includes(asked) ? asked : SUPPORTED[0],
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: 'hq', title: 'Team app', version: '1.0.0' },
+          serverInfo: { name: 'botly', title: 'Botly', version: '1.0.0' },
           instructions: 'Tools of the team app: connected apps, files for the user, tasks, routines, other agents on the team.',
         },
       };

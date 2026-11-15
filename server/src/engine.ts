@@ -193,7 +193,7 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
     }
   }
 
-  const cwd = env.localBox ? `/root/grokbot/files/${botId}` : path.join(home, 'workspace');
+  const cwd = env.localBox ? `/root/botly/files/${botId}` : path.join(home, 'workspace');
   fs.mkdirSync(cwd, { recursive: true });
 
   const cfgFile = path.join(home, 'config.yaml');
@@ -210,10 +210,12 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   // HQ_AGENT_APPROVALS=off lets bots act on their own screen (Hermes' hard blocks still apply).
   if (env.agentApprovals) cfg.approvals = { ...(cfg.approvals ?? {}), mode: env.agentApprovals };
   if (cdp) cfg.browser = { ...(cfg.browser ?? {}), cdp_url: cdp };
+  const existingMcp = { ...(cfg.mcp_servers ?? {}) };
+  if (String(existingMcp.hq?.url ?? '').endsWith(`/mcp/${botId}`)) delete existingMcp.hq;
   cfg.mcp_servers = {
-    ...(cfg.mcp_servers ?? {}),
+    ...existingMcp,
     ...extraMcpServers(),
-    hq: { url: `${env.mcpBaseUrl}/mcp/${botId}`, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
+    botly: { url: `${env.mcpBaseUrl}/mcp/${botId}`, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
   writePrivate(cfgFile, YAML.stringify(cfg));
 

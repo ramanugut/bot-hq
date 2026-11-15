@@ -4,7 +4,7 @@
 # It asks for the password without showing it. Then sign in on any device with that email and password.
 set -euo pipefail
 email="${1:?usage: set-password.sh <email>}"
-ENV_FILE="${ENV_FILE:-/opt/hq/app/.env}"
+ENV_FILE="${ENV_FILE:-/opt/botly/app/.env}"
 val() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2-; }
 read -rsp "New password (8+ characters): " pw; echo
 read -rsp "Same password again: " pw2; echo

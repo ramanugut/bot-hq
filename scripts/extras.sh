@@ -2,44 +2,44 @@
 # Free extras the bots use. Safe to run again: it only installs what is missing.
 #   - MarkItDown: turns PDF, Word, PowerPoint, Excel, web pages and more into text (read_document tool)
 #   - SearXNG: a private, free web search on 127.0.0.1:8888 (free_search tool)
-# Run as root:  bash /opt/hq/app/scripts/extras.sh
+# Run as root:  bash /opt/botly/app/scripts/extras.sh
 set -uo pipefail
-mkdir -p /var/log/hq
+mkdir -p /var/log/botly
 
 main() {
   # ---------- MarkItDown, in its own Python environment so the system's Python stays untouched
   if ! command -v markitdown >/dev/null 2>&1; then
     echo "Installing the document reader (MarkItDown)..."
     apt-get install -y -qq python3-venv >/dev/null 2>&1 || true
-    python3 -m venv /opt/hq/markitdown >/var/log/hq/markitdown.log 2>&1 \
-      && /opt/hq/markitdown/bin/pip install -q --upgrade pip >>/var/log/hq/markitdown.log 2>&1 \
-      && /opt/hq/markitdown/bin/pip install -q 'markitdown[pdf,docx,pptx,xlsx,xls,outlook]' >>/var/log/hq/markitdown.log 2>&1 \
-      && ln -sf /opt/hq/markitdown/bin/markitdown /usr/local/bin/markitdown \
+    python3 -m venv /opt/botly/markitdown >/var/log/botly/markitdown.log 2>&1 \
+      && /opt/botly/markitdown/bin/pip install -q --upgrade pip >>/var/log/botly/markitdown.log 2>&1 \
+      && /opt/botly/markitdown/bin/pip install -q 'markitdown[pdf,docx,pptx,xlsx,xls,outlook]' >>/var/log/botly/markitdown.log 2>&1 \
+      && ln -sf /opt/botly/markitdown/bin/markitdown /usr/local/bin/markitdown \
       && echo "  document reader ready" \
-      || { echo "  note: MarkItDown did not install:"; tail -5 /var/log/hq/markitdown.log; }
+      || { echo "  note: MarkItDown did not install:"; tail -5 /var/log/botly/markitdown.log; }
   fi
 
   # ---------- HyperFrames: renders the promo videos (HTML + GSAP -> MP4 with this server's Chromium)
-  if [ ! -x /opt/hq/node/bin/hyperframes ] || ! /opt/hq/node/bin/hyperframes --version 2>/dev/null | grep -q '^0\.9\.53'; then
+  if [ ! -x /opt/botly/node/bin/hyperframes ] || ! /opt/botly/node/bin/hyperframes --version 2>/dev/null | grep -q '^0\.9\.53'; then
     echo "Installing the video engine (HyperFrames)..."
-    PATH=/opt/hq/node/bin:$PATH npm i -g --no-audit --no-fund hyperframes@0.9.53 >/var/log/hq/hyperframes.log 2>&1 \
-      && echo "  video engine ready" || { echo "  note: HyperFrames did not install"; tail -5 /var/log/hq/hyperframes.log; }
+    PATH=/opt/botly/node/bin:$PATH npm i -g --no-audit --no-fund hyperframes@0.9.53 >/var/log/botly/hyperframes.log 2>&1 \
+      && echo "  video engine ready" || { echo "  note: HyperFrames did not install"; tail -5 /var/log/botly/hyperframes.log; }
   fi
 
   # A 'hyperframes' command for the bots' terminals: our Node, this server's Chromium, no telemetry.
   cat >/usr/local/bin/hyperframes <<'SH'
 #!/bin/sh
-export PATH=/opt/hq/node/bin:$PATH HYPERFRAMES_NO_TELEMETRY=1 HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_SKIP_SKILLS=1
+export PATH=/opt/botly/node/bin:$PATH HYPERFRAMES_NO_TELEMETRY=1 HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_SKIP_SKILLS=1
 [ -z "$HYPERFRAMES_BROWSER_PATH" ] && [ -x /usr/local/bin/chromium ] && export HYPERFRAMES_BROWSER_PATH=/usr/local/bin/chromium
-exec /opt/hq/node/bin/hyperframes "$@"
+exec /opt/botly/node/bin/hyperframes "$@"
 SH
   chmod 755 /usr/local/bin/hyperframes
 
   # ---------- SearXNG in Docker, reachable only from this server
-  local dir=/opt/hq/searxng
+  local dir=/opt/botly/searxng
   if ! command -v docker >/dev/null 2>&1; then
     echo "Installing Docker (for the free web search)..."
-    apt-get install -y -qq docker.io >/var/log/hq/docker.log 2>&1 || { echo "  note: Docker did not install"; tail -5 /var/log/hq/docker.log; return 0; }
+    apt-get install -y -qq docker.io >/var/log/botly/docker.log 2>&1 || { echo "  note: Docker did not install"; tail -5 /var/log/botly/docker.log; return 0; }
     systemctl enable --now docker >/dev/null 2>&1 || true
   fi
   if [ ! -f "$dir/settings.yml" ]; then
@@ -68,7 +68,7 @@ YML
       -e SEARXNG_BASE_URL=http://127.0.0.1:8888/ \
       -e GRANIAN_WORKERS=1 -e UWSGI_WORKERS=1 -e UWSGI_THREADS=2 \
       --memory 400m \
-      docker.io/searxng/searxng:latest >/var/log/hq/searxng.log 2>&1 || { echo "  note: SearXNG did not start"; tail -5 /var/log/hq/searxng.log; return 0; }
+      docker.io/searxng/searxng:latest >/var/log/botly/searxng.log 2>&1 || { echo "  note: SearXNG did not start"; tail -5 /var/log/botly/searxng.log; return 0; }
     for _ in $(seq 1 40); do
       curl -fsS 'http://127.0.0.1:8888/search?q=test&format=json' >/dev/null 2>&1 && { echo "  free web search ready"; return 0; }
       sleep 2

@@ -5,7 +5,7 @@
 # (or already have an account). The key it uses never leaves this machine.
 set -euo pipefail
 email="${1:?usage: sign-in-link.sh <email>}"
-ENV_FILE="${ENV_FILE:-/opt/hq/app/.env}"
+ENV_FILE="${ENV_FILE:-/opt/botly/app/.env}"
 val() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2-; }
 key="$(printf 'owner-login' | openssl dgst -sha256 -hmac "$(val SESSION_SECRET)" -r | cut -d' ' -f1)"
 curl -fsS -X POST "http://127.0.0.1:$(val PORT)/api/auth/owner" \

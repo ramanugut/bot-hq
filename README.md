@@ -18,15 +18,7 @@
 
 <p align="center">
   <img alt="Node 22 or newer" src="https://img.shields.io/badge/node-%E2%89%A522-3c873a">
-  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-1c1c1c">
   <img alt="Status: experimental" src="https://img.shields.io/badge/status-experimental-fd690f">
-</p>
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/screenshots/chat-dark.png">
-    <img src="assets/screenshots/chat-light.png" alt="A chat with a bot. The bot's steps are listed while it works, its screen is live in the side panel, and the Engine panel shows its model." width="100%">
-  </picture>
 </p>
 
 ---
@@ -47,19 +39,6 @@ Underneath, every bot is a Hermes agent, so it can run on the model subscription
 | **Voice** | Talk to a bot with xAI's realtime voice modes. Real work is handed to the same bot, with the same memory and tools. |
 | **Research on X** | Every bot has an `x_search` tool, backed by xAI. |
 | **Routines, tasks and a Library** | Recurring jobs on a schedule, a task list per bot, and a place where bots save the files they make. |
-
-<table>
-  <tr>
-    <td width="50%"><img src="assets/screenshots/viewer.png" alt="The full-size viewer showing a bot's Chrome window, live."></td>
-    <td width="50%"><img src="assets/screenshots/home-screen.jpg" alt="A bot's home screen: clock, the bot's name and role, and its apps."></td>
-  </tr>
-  <tr>
-    <td align="center"><sub>Watching a bot's screen live</sub></td>
-    <td align="center"><sub>Each screen is dressed as that bot's own computer</sub></td>
-  </tr>
-</table>
-
-<sub>The chat screenshot at the top uses the sample data built into the dev server (add <code>?fixtures</code> to the URL). The two above are from a running install.</sub>
 
 ## How it fits together
 
@@ -100,21 +79,25 @@ So bots made here do not show up in Hermes Desktop's Bots tab, and bots made the
 
 ## Install on the computer
 
+For an existing EC2 installation under `/opt/hq`, follow the [Botly migration guide](docs/BOTLY-MIGRATION.md). For a fresh Ubuntu installation with local screens and no paid services, see [the installer](scripts/install-local.sh).
+
+### Orgo installation
+
 The app is meant to run on the same Orgo computer as Hermes.
 
-1. On your machine: `npm ci && scripts/pack.sh hq-app.tgz`. Copy `hq-app.tgz` and `scripts/install-on-computer.sh` to the computer.
+1. On your machine: `npm ci && scripts/pack.sh botly-app.tgz`. Copy `botly-app.tgz` and `scripts/install-on-computer.sh` to the computer.
 2. In Orgo, create a public URL for port `8787` on that computer.
 3. On the computer, as root:
 
    ```bash
    PUBLIC_URL=https://<name>.orgo.dev ORGO_COMPUTER_ID=<uuid> ALLOWED_EMAILS=you@example.com \
    KEYS_FILE=/root/keys.txt PRIMARY_CDP_URL=http://127.0.0.1:9333 \
-     bash install-on-computer.sh hq-app.tgz
+     bash install-on-computer.sh botly-app.tgz
    ```
 
-   `KEYS_FILE` holds `XAI_API_KEY=` and `COMPOSIO_API_KEY=` lines (and `ORGO_API_KEY=` if Hermes' own `.env` has none); it is deleted after the first install. `PRIMARY_CDP_URL` is only for a main agent that already has its own Chrome. The script installs to `/opt/hq`, adds one supervisor program (`hq-app`), and leaves Hermes alone. Running it again with a newer `hq-app.tgz` upgrades the app and keeps its settings and data.
-4. Give the main agent the app's tools: `python3 /opt/hq/app/scripts/add-hq-to-hermes.py`. It adds one `mcp_servers.hq` entry to Hermes' `config.yaml`, keeps a dated copy of the file, and Hermes picks the change up without a restart. `--remove` takes it out again.
-5. Open the public URL and sign in with Google. If Google sign-in is not set up yet, `bash /opt/hq/app/scripts/sign-in-link.sh you@example.com` on the computer prints a one-time sign-in link.
+   `KEYS_FILE` holds `XAI_API_KEY=` and `COMPOSIO_API_KEY=` lines (and `ORGO_API_KEY=` if Hermes' own `.env` has none); it is deleted after the first install. `PRIMARY_CDP_URL` is only for a main agent that already has its own Chrome. The script installs to `/opt/botly`, adds one supervisor program (`botly-app`), and leaves Hermes alone. Running it again with a newer `botly-app.tgz` upgrades the app and keeps its settings and data.
+4. Give the main agent the app's tools: `python3 /opt/botly/app/scripts/add-botly-to-hermes.py`. It adds one `mcp_servers.botly` entry to Hermes' `config.yaml`, keeps a dated copy of the file, and Hermes picks the change up without a restart. `--remove` takes it out again.
+5. Open the public URL and sign in with Google. If Google sign-in is not set up yet, `bash /opt/botly/app/scripts/sign-in-link.sh you@example.com` on the computer prints a one-time sign-in link.
 
 <details>
 <summary><b>Remove everything</b></summary>
@@ -122,10 +105,10 @@ The app is meant to run on the same Orgo computer as Hermes.
 On the computer:
 
 ```bash
-python3 /opt/hq/hq-screen.py undress 99                      # main screen back to how it was (99 = its X display)
-python3 /opt/hq/app/scripts/add-hq-to-hermes.py --remove     # take the tools out of Hermes
-supervisorctl stop hq-app && supervisorctl remove hq-app
-rm -rf /etc/supervisor/conf.d/hq-app.conf /opt/hq /var/log/hq /root/grokbot /etc/opt/chrome/policies/managed/hq.json
+python3 /opt/botly/hq-screen.py undress 99                      # main screen back to how it was (99 = its X display)
+python3 /opt/botly/app/scripts/add-botly-to-hermes.py --remove     # take the tools out of Hermes
+supervisorctl stop botly-app && supervisorctl remove botly-app
+rm -rf /etc/supervisor/conf.d/botly-app.conf /opt/botly /var/log/botly /root/botly /etc/opt/chrome/policies/managed/botly.json
 ```
 
 Then delete the public URL in Orgo. Screens of the other bots are released when you delete those bots in the app.
@@ -145,7 +128,7 @@ npm run dev -w server     # API on :8787
 npm run dev -w web        # app on :5173
 ```
 
-With `HQ_LOCAL=0` the server reaches the computer through the Orgo API instead of running commands on it, which is enough for development. `DEV_LOGIN=1` enables the email-only sign-in form; never set it on a public address.
+With `BOTLY_LOCAL=0` the server reaches the computer through the Orgo API instead of running commands on it, which is enough for development. `DEV_LOGIN=1` enables the email-only sign-in form; never set it on a public address.
 
 `npm run build && npm start` serves the built app from the API port.
 
@@ -186,11 +169,10 @@ docs/               architecture; the Orgo and xAI/Composio guides predate the H
 - Experimental, no security audit. Bots share one computer and can reach each other's files there.
 - Approval cards cover Composio write actions. What a bot does through its browser or shell is not gated, and Hermes' own "risky command" prompts are not shown in the app yet.
 - Four bots at most, because of Orgo's four-screen limit.
-- A few internal names on disk (the `/root/grokbot` files folder, the `grokbot.db` database file, the `bothq-` backup file names) keep their old spelling so existing installs keep working.
 - The screen look is an original implementation inspired by OrgoAI/bops; no code or assets from that repository are used.
 
 ## License and credits
 
-Project code is available under the [MIT license](LICENSE). The bot artwork and some icons come from Grok Bot's design and remain the property of their owners, as do third-party app logos; the MIT license does not cover them. See [third-party notices](THIRD_PARTY_NOTICES.md).
+Botly-owned additions are all rights reserved. See [LICENSE](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md) for the terms that apply to included components.
 
 Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Orgo](https://orgo.ai), [Composio](https://composio.dev), and [xAI](https://x.ai). This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.

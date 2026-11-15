@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Give the main Hermes agent the app's tools: add the `hq` MCP server to its config.yaml.
+"""Give the main Hermes agent the app's tools: add the `botly` MCP server to its config.yaml.
 
 Run on the computer, after install-on-computer.sh:
-    python3 add-hq-to-hermes.py [--config /root/.hermes/config.yaml] [--entry /opt/hq/data/hermes-mcp-hq.yaml] [--remove]
+    python3 add-botly-to-hermes.py [--config /root/.hermes/config.yaml] [--entry /opt/botly/data/hermes-mcp-botly.yaml] [--remove]
 
 The edit is plain text (the file's comments and layout stay as they are), a dated copy of the file
 is kept next to it, and the result is checked before it replaces the original: every other setting
@@ -12,7 +12,7 @@ import argparse, os, re, shutil, sys, time
 
 p = argparse.ArgumentParser()
 p.add_argument('--config', default='/root/.hermes/config.yaml')
-p.add_argument('--entry', default='/opt/hq/data/hermes-mcp-hq.yaml')
+p.add_argument('--entry', default='/opt/botly/data/hermes-mcp-botly.yaml')
 p.add_argument('--remove', action='store_true')
 a = p.parse_args()
 
@@ -23,7 +23,7 @@ except ImportError:
 
 old = open(a.config, encoding='utf-8').read()
 lines = old.split('\n')
-block = [l for l in open(a.entry, encoding='utf-8').read().split('\n') if l.strip() and not l.lstrip().startswith('#')]
+block = [] if a.remove else [l for l in open(a.entry, encoding='utf-8').read().split('\n') if l.strip() and not l.lstrip().startswith('#')]
 
 def section():
     """Line range (start, end) of the top-level mcp_servers mapping, or None."""
@@ -35,10 +35,10 @@ def section():
             return i, j
     return None
 
-def hq_range(s, e):
-    """Line range of an existing `hq:` entry inside the section, or None."""
+def botly_range(s, e):
+    """Line range of an existing `botly:` entry inside the section, or None."""
     for i in range(s + 1, e):
-        if re.match(r'^  hq:\s*(#.*)?$', lines[i]):
+        if re.match(r'^  botly:\s*(#.*)?$', lines[i]):
             j = i + 1
             while j < e and (not lines[j].strip() or re.match(r'^(   +|\t)', lines[j])):
                 j += 1
@@ -49,7 +49,7 @@ def hq_range(s, e):
 
 sec = section()
 if sec:
-    had = hq_range(*sec)
+    had = botly_range(*sec)
     if had:
         del lines[had[0]:had[1]]
     if not a.remove:
@@ -66,21 +66,21 @@ if new == old:
 
 before, after = yaml.safe_load(old) or {}, yaml.safe_load(new) or {}
 b_servers, a_servers = dict(before.get('mcp_servers') or {}), dict(after.get('mcp_servers') or {})
-b_servers.pop('hq', None); hq = a_servers.pop('hq', None)
+b_servers.pop('botly', None); botly = a_servers.pop('botly', None)
 rest = lambda d: {k: v for k, v in d.items() if k != 'mcp_servers'}
 if rest(before) != rest(after) or b_servers != a_servers:
     sys.exit('refusing: the edit would change other settings')
-if a.remove and hq is not None:
-    sys.exit('refusing: hq is still there')
-if not a.remove and not (isinstance(hq, dict) and str(hq.get('url', '')).startswith('http') and 'Authorization' in (hq.get('headers') or {})):
-    sys.exit('refusing: the hq entry did not read back correctly')
+if a.remove and botly is not None:
+    sys.exit('refusing: botly is still there')
+if not a.remove and not (isinstance(botly, dict) and str(botly.get('url', '')).startswith('http') and 'Authorization' in (botly.get('headers') or {})):
+    sys.exit('refusing: the botly entry did not read back correctly')
 
-backup = f"{a.config}.before-hq-{time.strftime('%Y%m%d-%H%M%S')}"
+backup = f"{a.config}.before-botly-{time.time_ns()}"
 shutil.copy2(a.config, backup)
-tmp = a.config + '.hq-tmp'
+tmp = a.config + '.botly-tmp'
 with open(tmp, 'w', encoding='utf-8') as f:
     f.write(new)
 shutil.copymode(a.config, tmp)
 st = os.stat(a.config); os.chown(tmp, st.st_uid, st.st_gid)
 os.replace(tmp, a.config)
-print(('removed hq' if a.remove else 'added hq') + f'; previous file kept as {backup}')
+print(('removed botly' if a.remove else 'added botly') + f'; previous file kept as {backup}')

@@ -4,12 +4,12 @@
 # https://<public-ip-with-dashes>.sslip.io (free, no domain needed).
 #
 # Fresh server, as root:
-#   1. git clone -b free-edition https://github.com/ramanugut/bot-hq.git /opt/hq/app
+#   1. git clone -b free-edition https://github.com/ramanugut/bot-hq.git /opt/botly/app
 #   2. curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash && source ~/.bashrc
 #      hermes model          (pick "ChatGPT or Codex Subscription" and sign in)
-#   3. ALLOWED_EMAILS=you@example.com bash /opt/hq/app/scripts/install-local.sh
-#   4. bash /opt/hq/app/scripts/set-password.sh you@example.com
-# Later updates: bash /opt/hq/app/scripts/update.sh
+#   3. ALLOWED_EMAILS=you@example.com bash /opt/botly/app/scripts/install-local.sh
+#   4. bash /opt/botly/app/scripts/set-password.sh you@example.com
+# Later updates: bash /opt/botly/app/scripts/update.sh
 #
 # Optional: PUBLIC_URL (default https://<ip>.sslip.io), MAX_BOTS (default 2), PORT (8787),
 # XAI_API_KEY / COMPOSIO_API_KEY (voice, X research, connected apps; all optional).
@@ -17,10 +17,11 @@
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root: sudo -i, then run this again"; exit 1; }
 : "${ALLOWED_EMAILS:?set ALLOWED_EMAILS=you@example.com}"
-APP=/opt/hq/app; DATA=/opt/hq/data; NODE_DIR=/opt/hq/node; NODE_V=v22.21.1; BROWSERS=/opt/hq/browsers
+APP=/opt/botly/app; DATA=/opt/botly/data; NODE_DIR=/opt/botly/node; NODE_V=v22.21.1; BROWSERS=/opt/botly/browsers
 PORT="${PORT:-8787}"; HERMES_HOME_DIR=/root/.hermes
 [ -f "$APP/package.json" ] || { echo "clone the repo to $APP first"; exit 1; }
-mkdir -p "$DATA" "$NODE_DIR" /var/log/hq
+[[ ! -d /opt/hq/app || -L /opt/hq ]] || { echo 'Existing HQ install detected. Follow docs/BOTLY-MIGRATION.md.' >&2; exit 1; }
+mkdir -p /root/botly/files /root/botly/profiles "$DATA" "$NODE_DIR" /var/log/botly
 say() { printf '\n== %s\n' "$*"; }
 
 say "1/7 system packages"
@@ -28,10 +29,10 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends supervisor xvfb x11vnc openbox x11-utils x11-xserver-utils \
   imagemagick wmctrl xdotool dbus dbus-x11 python3-gi python3-gi-cairo gir1.2-gtk-3.0 librsvg2-common \
-  fonts-inter fonts-noto-color-emoji python3-yaml python3-pip ffmpeg pandoc poppler-utils openssl curl git ca-certificates caddy >/var/log/hq/apt.log 2>&1 \
-  || { tail -20 /var/log/hq/apt.log; exit 1; }
+  fonts-inter fonts-noto-color-emoji python3-yaml python3-pip ffmpeg pandoc poppler-utils openssl curl git ca-certificates caddy >/var/log/botly/apt.log 2>&1 \
+  || { tail -20 /var/log/botly/apt.log; exit 1; }
 
-pip3 install -q --break-system-packages edge-tts >/var/log/hq/pip.log 2>&1 || echo "note: edge-tts (free voice-overs) did not install"
+pip3 install -q --break-system-packages edge-tts >/var/log/botly/pip.log 2>&1 || echo "note: edge-tts (free voice-overs) did not install"
 
 say "2/7 Node.js"
 case "$(uname -m)" in aarch64|arm64) ARCH=arm64 ;; x86_64) ARCH=x64 ;; *) echo "unsupported CPU $(uname -m)"; exit 1 ;; esac
@@ -43,8 +44,8 @@ node -v
 
 say "3/7 Chromium for the bots"
 if [ ! -x /usr/local/bin/chromium ]; then
-  PLAYWRIGHT_BROWSERS_PATH="$BROWSERS" npx -y playwright@1 install --with-deps chromium >/var/log/hq/chromium.log 2>&1 \
-    || { tail -20 /var/log/hq/chromium.log; exit 1; }
+  PLAYWRIGHT_BROWSERS_PATH="$BROWSERS" npx -y playwright@1 install --with-deps chromium >/var/log/botly/chromium.log 2>&1 \
+    || { tail -20 /var/log/botly/chromium.log; exit 1; }
   bin="$(find "$BROWSERS" -path '*chromium-*' -type f \( -name chrome -o -name chromium \) -perm -u+x | grep -v headless | head -1)"
   [ -n "$bin" ] || { echo "Chromium download finished but no browser was found under $BROWSERS"; exit 1; }
   ln -sf "$bin" /usr/local/bin/chromium
@@ -65,7 +66,7 @@ grep -q '^API_SERVER_KEY=.\+' "$HERMES_HOME_DIR/.env" || setenv API_SERVER_KEY "
 # (DevTools port 9299), and its computer-use tool acts on that display.
 setenv BROWSER_CDP_URL http://127.0.0.1:9299
 apt-get install -y -qq at-spi2-core >/dev/null 2>&1 || true
-"$HERMES_BIN" computer-use install >/var/log/hq/cua.log 2>&1 || echo "note: computer-use driver did not install (see /var/log/hq/cua.log); the browser tool still works"
+"$HERMES_BIN" computer-use install >/var/log/botly/cua.log 2>&1 || echo "note: computer-use driver did not install (see /var/log/botly/cua.log); the browser tool still works"
 touch "$HERMES_HOME_DIR/config.yaml"
 python3 - "$HERMES_HOME_DIR/config.yaml" <<'PY'
 import shutil, sys, time, yaml
@@ -82,17 +83,17 @@ pt['api_server'] = cur
 c.setdefault('approvals', {})['mode'] = 'off'
 # Images on the ChatGPT sign-in (no API key needed); harmless if another provider is used.
 c.setdefault('image_gen', {}).setdefault('provider', 'openai-codex')
-shutil.copy2(p, f'{p}.before-hq-{int(time.time())}')
+shutil.copy2(p, f'{p}.before-botly-{int(time.time())}')
 yaml.safe_dump(c, open(p, 'w'), sort_keys=False)
 PY
-cat > /etc/supervisor/conf.d/hq-hermes.conf <<EOF
-[program:hq-hermes]
+cat > /etc/supervisor/conf.d/botly-hermes.conf <<EOF
+[program:botly-hermes]
 command=$HERMES_BIN gateway
 directory=/root
 autostart=true
 autorestart=true
 startsecs=5
-stdout_logfile=/var/log/hq/hermes.log
+stdout_logfile=/var/log/botly/hermes.log
 stdout_logfile_maxbytes=10MB
 redirect_stderr=true
 environment=HOME="/root",DISPLAY=":99",PATH="$(dirname "$HERMES_BIN"):$NODE_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -101,8 +102,8 @@ EOF
 say "5/7 the app"
 cd "$APP"
 # The SQLite package ships ready-made binaries (ARM included), so no compiler is needed.
-npm ci --ignore-scripts --no-audit --no-fund >/var/log/hq/npm.log 2>&1 || { tail -20 /var/log/hq/npm.log; exit 1; }
-npm run build >/var/log/hq/build.log 2>&1 || { tail -30 /var/log/hq/build.log; exit 1; }
+npm ci --ignore-scripts --no-audit --no-fund >/var/log/botly/npm.log 2>&1 || { tail -20 /var/log/botly/npm.log; exit 1; }
+npm run build >/var/log/botly/build.log 2>&1 || { tail -30 /var/log/botly/build.log; exit 1; }
 if [ ! -f "$APP/.env" ]; then
   if [ -z "${PUBLIC_URL:-}" ]; then
     ip="$(curl -fsS https://checkip.amazonaws.com | tr -d '[:space:]')"
@@ -115,12 +116,12 @@ if [ ! -f "$APP/.env" ]; then
     echo "SESSION_SECRET=$(openssl rand -hex 32)"
     echo "DEV_LOGIN=0"
     echo "ALLOWED_EMAILS=$ALLOWED_EMAILS"
-    echo "DB_PATH=$DATA/hq.db"
+    echo "DB_PATH=$DATA/botly.db"
     echo "ENGINES_DIR=$DATA/engines"
     echo "HERMES_BIN=$HERMES_BIN"
     echo "HERMES_URL=http://127.0.0.1:8642"
     echo "HERMES_HOME_PRIMARY=$HERMES_HOME_DIR"
-    echo "HQ_SCREENS=local"
+    echo "BOTLY_SCREENS=local"
     echo "MAX_BOTS=${MAX_BOTS:-2}"
     echo "XAI_API_KEY=${XAI_API_KEY:-}"
     echo "COMPOSIO_API_KEY=${COMPOSIO_API_KEY:-}"
@@ -128,8 +129,8 @@ if [ ! -f "$APP/.env" ]; then
   chmod 600 "$APP/.env"
 fi
 PUBLIC_URL="$(grep -E '^APP_URL=' "$APP/.env" | cut -d= -f2-)"
-cat > /etc/supervisor/conf.d/hq-app.conf <<EOF
-[program:hq-app]
+cat > /etc/supervisor/conf.d/botly-app.conf <<EOF
+[program:botly-app]
 command=$NODE_DIR/bin/node --env-file=$APP/.env $APP/server/dist/index.js
 directory=$APP
 autostart=true
@@ -137,7 +138,7 @@ autorestart=true
 startsecs=3
 stopasgroup=false
 killasgroup=false
-stdout_logfile=/var/log/hq/app.log
+stdout_logfile=/var/log/botly/app.log
 stdout_logfile_maxbytes=10MB
 redirect_stderr=true
 environment=HOME="/root",PATH="$(dirname "$HERMES_BIN"):$NODE_DIR/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -147,16 +148,16 @@ say "6/7 start everything"
 systemctl enable --now supervisor >/dev/null 2>&1 || true
 supervisorctl reread >/dev/null
 supervisorctl update >/dev/null
-supervisorctl restart hq-hermes hq-app >/dev/null || true
+supervisorctl restart botly-hermes botly-app >/dev/null || true
 for _ in $(seq 1 40); do curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1 && break; sleep 1; done
-curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || { echo "the app did not start:"; tail -30 /var/log/hq/app.log; exit 1; }
+curl -fsS "http://127.0.0.1:$PORT/api/health" >/dev/null || { echo "the app did not start:"; tail -30 /var/log/botly/app.log; exit 1; }
 for _ in $(seq 1 40); do curl -fsS http://127.0.0.1:8642/health >/dev/null 2>&1 && break; sleep 1; done
-curl -fsS http://127.0.0.1:8642/health >/dev/null || { echo "Hermes' API server did not start:"; tail -30 /var/log/hq/hermes.log; exit 1; }
+curl -fsS http://127.0.0.1:8642/health >/dev/null || { echo "Hermes' API server did not start:"; tail -30 /var/log/botly/hermes.log; exit 1; }
 # Give the main agent the app's tools (bot-to-bot messages, tasks, Library...).
 secret="$(grep -E '^SESSION_SECRET=' "$APP/.env" | cut -d= -f2-)"
 tok="$(printf 'mcp:primary' | openssl dgst -sha256 -hmac "$secret" -r | cut -d' ' -f1)"
-( umask 077; cat > "$DATA/hermes-mcp-hq.yaml" <<EOF
-  hq:
+( umask 077; cat > "$DATA/hermes-mcp-botly.yaml" <<EOF
+  botly:
     url: http://127.0.0.1:$PORT/mcp/primary
     headers:
       Authorization: Bearer $tok
@@ -165,7 +166,7 @@ tok="$(printf 'mcp:primary' | openssl dgst -sha256 -hmac "$secret" -r | cut -d' 
 EOF
 )
 touch "$HERMES_HOME_DIR/config.yaml"
-python3 "$APP/scripts/add-hq-to-hermes.py" >/dev/null 2>&1 || echo "note: could not add the app's tools to Hermes; run: python3 $APP/scripts/add-hq-to-hermes.py"
+python3 "$APP/scripts/add-botly-to-hermes.py" >/dev/null 2>&1 || echo "note: could not add the app's tools to Hermes; run: python3 $APP/scripts/add-botly-to-hermes.py"
 
 say "7/7 HTTPS"
 host="${PUBLIC_URL#https://}"; host="${host%%/*}"
@@ -178,7 +179,7 @@ systemctl restart caddy
 sleep 5
 
 # Follow the public IP if the server is stopped and started (AWS gives it a new one).
-cat > /etc/systemd/system/hq-address.service <<EOF
+cat > /etc/systemd/system/botly-address.service <<EOF
 [Unit]
 Description=Keep Botly's address in step with the public IP
 After=network-online.target supervisor.service caddy.service
@@ -192,11 +193,11 @@ ExecStart=/bin/bash $APP/scripts/refresh-address.sh
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
-systemctl enable hq-address.service >/dev/null 2>&1
+systemctl enable botly-address.service >/dev/null 2>&1
 
-# Nightly backup at 02:30 UTC; keeps the last 7.
-printf '30 2 * * * root /bin/bash %s/scripts/backup.sh >/var/log/hq/backup.log 2>&1\n' "$APP" > /etc/cron.d/hq-backup
-chmod 644 /etc/cron.d/hq-backup
+# Nightly backup at 02:30 UTC; keeps the last 3.
+printf '30 2 * * * root /bin/bash %s/scripts/backup.sh >/var/log/botly/backup.log 2>&1\n' "$APP" > /etc/cron.d/botly-backup
+chmod 644 /etc/cron.d/botly-backup
 
 echo "Installing free extras (document reading, free web search)..."
 bash "$APP/scripts/extras.sh" || true

@@ -8,7 +8,7 @@ Runs **without Orgo or any paid key**. Branch: **`free-edition`**.
 
 - App: Node 22 + Hono + SQLite (`server/`), React + Vite (`web/`).
 - Bots: [Hermes Agent](https://github.com/NousResearch/hermes-agent). The main bot ("Marvelous") is the Hermes
-  install at `/root/.hermes`; extra bots get their own Hermes home under `/opt/hq/data/engines/<botId>`.
+  install at `/root/.hermes`; extra bots get their own Hermes home under `/opt/botly/data/engines/<botId>`.
 - Model: Hermes provider **openai-codex** (ChatGPT Plus sign-in), model `gpt-6-luna`, reasoning medium.
 - Screens: X displays on the server (`server/src/localscreen.ts`): Xvfb + openbox + x11vnc (localhost only).
   Main bot on `:99`, others `:100`, `:101`… Chrome DevTools port = 9200 + display (main bot 9299).
@@ -17,37 +17,39 @@ Runs **without Orgo or any paid key**. Branch: **`free-edition`**.
 - Web search: free SearXNG remains the first-choice provider. Botly's own Tavily REST tools can read `TAVILY_API_KEY` from the app environment, `TAVILY_API_KEY_FILE`, or the primary Hermes `.env` (without copying secrets to GitHub).
 
 ## Server
-- AWS EC2 `bot-hq`, eu region, **t4g.small (ARM, 2 GB) + 4 GB swap**, Ubuntu 24.04, AWS free-plan credits.
+
+The paths below apply after the [one-time migration](BOTLY-MIGRATION.md). Check the running checkout before using these paths.
+- AWS EC2 `bot-hq` (AWS instance name), eu region, **t4g.small (ARM, 2 GB) + 4 GB swap**, Ubuntu 24.04, AWS free-plan credits.
 - Address: `https://<public-ip-with-dashes>.sslip.io` (Caddy, Let's Encrypt). `scripts/refresh-address.sh` runs at
-  boot (systemd `hq-address`) and follows a new IP after stop/start.
-- Max 2 bots (memory). `MAX_BOTS` in `/opt/hq/app/.env`.
+  boot (systemd `botly-address`) and follows a new IP after stop/start.
+- Max 2 bots (memory). `MAX_BOTS` in `/opt/botly/app/.env`.
 
 | Thing | Where |
 |---|---|
-| App code (git checkout of free-edition) | `/opt/hq/app` |
-| App settings (secrets) | `/opt/hq/app/.env` |
-| Database, VAPID keys, screen state, extra bots | `/opt/hq/data/` |
+| App code (git checkout of free-edition) | `/opt/botly/app` |
+| App settings (secrets) | `/opt/botly/app/.env` |
+| Database, VAPID keys, screen state, extra bots | `/opt/botly/data/` |
 | Main bot (Hermes) config / keys | `/root/.hermes/config.yaml`, `/root/.hermes/.env`, `auth.json` |
-| Bot Library files, Chrome profiles | `/root/grokbot/files/<botId>`, `/root/grokbot/profiles/<botId>` |
-| Logs | `/var/log/hq/app.log`, `/var/log/hq/hermes.log` |
-| Backups (nightly 02:30 UTC, keep 3) | `/opt/hq/backups/` |
-| Node | `/opt/hq/node/bin` |
-| Document reader (MarkItDown venv) | `/opt/hq/markitdown`, `/usr/local/bin/markitdown` |
-| Free web search (SearXNG, Docker container `searxng`) | `127.0.0.1:8888`, settings in `/opt/hq/searxng/settings.yml` |
+| Bot Library files, Chrome profiles | `/root/botly/files/<botId>`, `/root/botly/profiles/<botId>` |
+| Logs | `/var/log/botly/app.log`, `/var/log/botly/hermes.log` |
+| Backups (nightly 02:30 UTC, keep 3) | `/opt/botly/backups/` |
+| Node | `/opt/botly/node/bin` |
+| Document reader (MarkItDown venv) | `/opt/botly/markitdown`, `/usr/local/bin/markitdown` |
+| Free web search (SearXNG, Docker container `searxng`) | `127.0.0.1:8888`, settings in `/opt/botly/searxng/settings.yml` |
 
-Processes (supervisor): `hq-app` (the web app, port 8787) and `hq-hermes` (`hermes gateway`, API on 127.0.0.1:8642).
+Processes (supervisor): `botly-app` (the web app, port 8787) and `botly-hermes` (`hermes gateway`, API on 127.0.0.1:8642).
 Caddy serves HTTPS in front of 8787.
 
 ## Everyday commands (run as root: `sudo -i`)
 ```
-bash /opt/hq/app/scripts/update.sh                 # pull free-edition, build, restart
-supervisorctl status                               # hq-app, hq-hermes
-supervisorctl restart hq-app | hq-hermes
-tail -50 /var/log/hq/app.log; tail -50 /var/log/hq/hermes.log
-bash /opt/hq/app/scripts/set-password.sh EMAIL     # set/reset the sign-in password
-bash /opt/hq/app/scripts/backup.sh                 # backup now
-bash /opt/hq/app/scripts/add-mcp.sh NAME URL       # give bots an MCP server's tools
-bash /opt/hq/app/scripts/extras.sh                 # (re)install MarkItDown + SearXNG; update.sh runs it too
+bash /opt/botly/app/scripts/update.sh                 # pull free-edition, build, restart
+supervisorctl status                               # botly-app, botly-hermes
+supervisorctl restart botly-app | botly-hermes
+tail -50 /var/log/botly/app.log; tail -50 /var/log/botly/hermes.log
+bash /opt/botly/app/scripts/set-password.sh EMAIL     # set/reset the sign-in password
+bash /opt/botly/app/scripts/backup.sh                 # backup now
+bash /opt/botly/app/scripts/add-mcp.sh NAME URL       # give bots an MCP server's tools
+bash /opt/botly/app/scripts/extras.sh                 # (re)install MarkItDown + SearXNG; update.sh runs it too
 docker logs searxng | tail                         # free search not answering?
 hermes model                                       # change provider/model (interactive)
 ```
@@ -65,7 +67,7 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
   `HEARTBEAT_OK` (or stay_silent) removes the check-in's rows from the chat. Quiet 22:00–07:00 user time by default.
   Uses its own daily Hermes thread (`hq-<bot>-hb-<date>`). Tool `set_heartbeat`; settings in Bot settings → General.
 - **read_document** tool (MarkItDown) and **free_search** tool (SearXNG). Both in `server/src/agent/tools.ts`.
-- **Screens sleep** after `HQ_SCREEN_SLEEP_MIN` (15) idle minutes: the bot's Chrome and desk apps stop
+- **Screens sleep** after `BOTLY_SCREEN_SLEEP_MIN` (15) idle minutes: the bot's Chrome and desk apps stop
   (`screens.asleep=1`), Xvfb stays. `screenForWork` (every turn) and opening the screen wake it. Settings →
   Computer has Sleep/Wake per screen.
 
@@ -74,7 +76,7 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
   builds a vertical promo: auto-fitting titles, Ken Burns, transitions (zoom/whip/wipe/flash/rise), points, price
   cards with count-up, CTA, story progress bar, word-by-word captions from edge-tts WordBoundary timings.
 - Bots call the `make_promo_video` tool; it renders in the background and posts a playable video card.
-- Server needs `hyperframes@0.9.53` in `/opt/hq/node/bin` (extras.sh installs it) and uses `/usr/local/bin/chromium`
+- Server needs `hyperframes@0.9.53` in `/opt/botly/node/bin` (extras.sh installs it) and uses `/usr/local/bin/chromium`
   via `HYPERFRAMES_BROWSER_PATH`; renders with `--low-memory-mode`, CRF 21. Telemetry off.
 - Fonts (Montserrat, Inter, Playfair Display, Fredoka, Cormorant Garamond: all OFL) and gsap.min.js are vendored in `template/`.
 - Styles (`style`): neon, minimal, editorial, playful, luxury (CSS tokens in index.html + motion table STY in engine.js);

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Botly promo engine: a polished vertical promo video from a short JSON brief.
 
-  python3 /opt/hq/app/scripts/tools/promo/make-promo.py --spec brief.json --out /root/grokbot/files/<bot>/promo.mp4
+  python3 /opt/botly/app/scripts/tools/promo/make-promo.py --spec brief.json --out /root/botly/files/<bot>/promo.mp4
 
 Design and motion come from the template (HyperFrames + GSAP): text that always fits, cinematic
 push-ins, transitions, price cards with counting numbers, a call-to-action close, a story progress bar
@@ -78,7 +78,7 @@ def audio_len(path):
 
 
 def hyperframes_cmd():
-    for c in (shutil.which('hyperframes'), '/opt/hq/node/bin/hyperframes'):
+    for c in (shutil.which('hyperframes'), '/opt/botly/node/bin/hyperframes'):
         if c and os.path.exists(c):
             return [c]
     return ['npx', '-y', 'hyperframes@0.9.53']
@@ -200,7 +200,7 @@ def main():
     open(os.path.join(build, 'index.html'), 'w').write(html)
 
     env = dict(os.environ, HYPERFRAMES_NO_TELEMETRY='1', HYPERFRAMES_NO_UPDATE_CHECK='1', HYPERFRAMES_SKIP_SKILLS='1')
-    env['PATH'] = '/opt/hq/node/bin:' + env.get('PATH', '')
+    env['PATH'] = '/opt/botly/node/bin:' + env.get('PATH', '')
     for chrome in ('/usr/local/bin/chromium', '/usr/bin/chromium', '/usr/bin/google-chrome'):
         if os.path.exists(chrome) and 'HYPERFRAMES_BROWSER_PATH' not in os.environ:
             env['HYPERFRAMES_BROWSER_PATH'] = chrome

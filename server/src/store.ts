@@ -387,5 +387,5 @@ export function isOnceSchedule(expr: string): boolean {
 /** The user's time zone (from their browser), or the server's default. */
 export function userTimezone(userId: string): string {
   const r = db.prepare('SELECT timezone FROM users WHERE id=?').get(userId) as any;
-  return r?.timezone || process.env.HQ_TIMEZONE || 'UTC';
+  return r?.timezone || (process.env.BOTLY_TIMEZONE ?? process.env.HQ_TIMEZONE) || 'UTC';
 }

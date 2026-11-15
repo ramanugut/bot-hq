@@ -14,12 +14,12 @@ import subprocess
 import time
 import urllib.request
 
-ROOT = '/opt/hq'
+ROOT = '/opt/botly'
 SCREENS = ROOT + '/screens'
 JOBS = ROOT + '/jobs'
 EXT = ROOT + '/ext'
-LOGS = '/var/log/hq'
-PROFILES = '/root/grokbot/profiles'
+LOGS = '/var/log/botly'
+PROFILES = '/root/botly/profiles'
 HOME_PORT = 7391
 HOME_URL = 'http://127.0.0.1:%d' % HOME_PORT
 BROWSER_CLASS = 'HQBrowser'
@@ -649,7 +649,7 @@ def settle_window(n, pid, wait=4.0):
 
 def open_files(n):
     env = screen_env(n)
-    start = '/root/grokbot/files' if os.path.isdir('/root/grokbot/files') else env['HOME']
+    start = '/root/botly/files' if os.path.isdir('/root/botly/files') else env['HOME']
     for name in ('thunar', 'nautilus', 'nemo', 'pcmanfm', 'caja'):
         if shutil.which(name):
             return spawn([name, start], env, 'files-%d' % int(n))

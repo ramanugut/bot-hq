@@ -64,7 +64,7 @@ function ensureDisplay(n: number): Promise<void> {
   const p = (async () => {
     fs.mkdirSync(stateDir(), { recursive: true, mode: 0o700 });
     if (!(await alive(n))) {
-      const [w, h] = (process.env.HQ_SCREEN_SIZE ?? '1280x800').split('x');
+      const [w, h] = ((process.env.BOTLY_SCREEN_SIZE ?? process.env.HQ_SCREEN_SIZE) ?? '1280x800').split('x');
       detached('Xvfb', [`:${n}`, '-screen', '0', `${w}x${h}x24`, '-nolisten', 'tcp', '-ac']);
       for (let i = 0; i < 50 && !(await alive(n)); i++) await new Promise((r) => setTimeout(r, 200));
       if (!(await alive(n))) throw new Error(`screen :${n} did not start (is Xvfb installed?)`);

@@ -18,7 +18,7 @@ browser ── HTTP + SSE ──► server ── POST /v1/responses ──► H
 | Engines | `server/src/engine.ts` | Which Hermes runs which Bot. The **primary** engine is the gateway that already runs on the computer; the app only calls its API. A **managed** engine is a Hermes home under `ENGINES_DIR/<botId>` with its own `hermes gateway run`, its own port (from 8650), credentials, model and browser helper (`BH_HOME`). Also: model and provider settings, and opening Hermes' subscription sign-in in a terminal on the Bot's screen |
 | App tools | `server/src/mcp.ts`, `agent/tools.ts` | An MCP endpoint per Bot (`POST /mcp/<botId>`, `POST /mcp/primary`; bearer token derived from `SESSION_SECRET`). Tools: `x_search`, `save_file`, routines, tasks, check-ins, `send_to_bot`, group chats, `ask_user`, `request_app_connection`, plus the user's Composio tools |
 | Memory | `server/src/engine-memory.ts` | Memory lives in each Bot's Hermes home (`memories/MEMORY.md`, `USER.md`). The app shows the entries and lets the user remove one |
-| Screens | `server/src/computer.ts`, `desk.ts`, `box.ts`, `server/box/*` | One Orgo Linux computer; the primary Bot uses the default screen, every other Bot leases an Orgo screen (four per computer). `desk.ts` installs the scripts in `server/box/` under `/opt/hq` and calls them to dress a screen: wallpaper, dock, light theme, a Chrome with its own profile and DevTools port (9200 + display number), and a home screen as the new tab page. `box.ts` runs commands locally (`HQ_LOCAL=1`) or through Orgo's API |
+| Screens | `server/src/computer.ts`, `desk.ts`, `box.ts`, `server/box/*` | One Orgo Linux computer; the primary Bot uses the default screen, every other Bot leases an Orgo screen (four per computer). `desk.ts` installs the scripts in `server/box/` under `/opt/botly` and calls them to dress a screen: wallpaper, dock, light theme, a Chrome with its own profile and DevTools port (9200 + display number), and a home screen as the new tab page. `box.ts` runs commands locally (`BOTLY_LOCAL=1`) or through Orgo's API |
 | Viewer | `server/src/vnc.ts` | WebSocket relay between the browser (noVNC) and the screen's VNC server. The server does the VNC auth, so the computer's password never reaches the browser. In *watch* mode, keyboard, pointer and clipboard messages are dropped on the server |
 | Apps | `server/src/composio.ts`, `triggers.ts` | Catalog, per-user sessions, connect links, tool execution, and triggers for event routines. Sign-in uses a Composio-managed Google connection |
 | Scheduling | `server/src/routines.ts`, `proactive.ts` | Cron routines, event routines, and check-ins for the primary Bot. Each run is a turn |
@@ -29,7 +29,7 @@ browser ── HTTP + SSE ──► server ── POST /v1/responses ──► H
 
 The first Bot is bound to a Hermes gateway the app did not start. The rules:
 
-- The app never restarts it, stops it, or writes its `config.yaml`. Giving it the app's tools is a separate, explicit step (`scripts/add-hq-to-hermes.py`), which adds one `mcp_servers.hq` entry and keeps a copy of the file. Hermes loads the change without a restart.
+- The app never restarts it, stops it, or writes its `config.yaml`. Giving it the app's tools is a separate, explicit step (`scripts/add-botly-to-hermes.py`), which adds one `mcp_servers.botly` entry and keeps a copy of the file. Hermes loads the change without a restart.
 - If that agent already has its own Chrome (`PRIMARY_CDP_URL`), the app never starts, stops or reconfigures it. The home screen still arrives there, through a Chrome policy that installs the home-screen extension.
 - Its other sessions (iMessage, Telegram, cron) see the same tools. When one of those sessions calls a tool that needs approval, the card shows up in the app.
 
@@ -68,7 +68,7 @@ Not covered: what a Bot does through its browser or shell, and Hermes' own promp
 
 ## Data
 
-SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies, routines, tasks, skills, screen leases, Composio session ids. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/grokbot/profiles/<botId>`, Library files in `/root/grokbot/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
+SQLite (`DB_PATH`, WAL): users and sessions, Bots, rows, approvals and policies, routines, tasks, skills, screen leases, Composio session ids. Each managed Bot's Hermes home is under `ENGINES_DIR`. On the computer: Chrome profiles in `/root/botly/profiles/<botId>`, Library files in `/root/botly/files/<botId>`. Deleting a Bot removes its gateway, home, profile, files and screen.
 
 Secrets live in `.env` on the server and in each Hermes home.
 

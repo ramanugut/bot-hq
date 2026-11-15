@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Give your bots an MCP server's tools (for example your Mumatec WHMCS tools). Run as root:
-#   bash /opt/hq/app/scripts/add-mcp.sh whmcs https://your-server/mcp
+#   bash /opt/botly/app/scripts/add-mcp.sh whmcs https://your-server/mcp
 # It asks for an access token (optional, hidden as you paste). The main bot gets it straight away;
 # bots created afterwards get it too. Remove with: bash add-mcp.sh whmcs --remove
 set -euo pipefail
@@ -22,7 +22,7 @@ if url == '--remove': servers.pop(name, None)
 else: servers[name] = entry
 yaml.safe_dump(c, open(p, 'w'), sort_keys=False)
 # Bots created by the app later (EXTRA_MCP_SERVERS in the app's .env)
-e = '/opt/hq/app/.env'
+e = '/opt/botly/app/.env'
 lines = open(e).read().splitlines()
 cur = {}
 for l in lines:
@@ -35,4 +35,4 @@ lines = [l for l in lines if not l.startswith('EXTRA_MCP_SERVERS=')] + [f"EXTRA_
 open(e, 'w').write('\n'.join(lines) + '\n')
 print(('removed ' if url == '--remove' else 'added ') + name)
 PY
-supervisorctl restart hq-hermes hq-app >/dev/null && echo "restarted; open a new chat and ask your main bot what tools it has from '$name'"
+supervisorctl restart botly-hermes botly-app >/dev/null && echo "restarted; open a new chat and ask your main bot what tools it has from '$name'"

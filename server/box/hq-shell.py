@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """hq-shell N: the desktop pieces of screen N. One process per X display.
 
-It paints the wallpaper described in /opt/hq/screens/N/look.json (through xfdesktop where that runs,
+It paints the wallpaper described in /opt/botly/screens/N/look.json (through xfdesktop where that runs,
 in a desktop window of its own on a bare display) and shows a small dock with Browser, Terminal and
 Files. The dock lives in the layer below normal windows, so a maximized window simply covers it.
 It follows changes to look.json and to the screen size on its own, and exits when the look is removed.

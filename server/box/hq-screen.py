@@ -36,7 +36,7 @@ import hqlib  # noqa: E402
 from hqlib import ROOT, JOBS, EXT, LOGS  # noqa: E402
 
 POLICY_DIRS = ('/etc/opt/chrome/policies/managed', '/etc/chromium/policies/managed')
-POLICY_NAME = 'hq.json'
+POLICY_NAME = 'botly.json'
 GTK_SETTINGS = os.path.expanduser('~/.config/gtk-3.0/settings.ini')
 
 

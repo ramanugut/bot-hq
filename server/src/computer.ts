@@ -251,7 +251,7 @@ export async function releaseScreen(botId: string): Promise<void> {
 /** A deleted bot leaves nothing behind on the computer: its browser profile and its Library folder go. */
 export async function forgetBotFiles(botId: string): Promise<void> {
   if (!/^bot_[\w-]+$/.test(botId)) return;
-  await box.bash(`rm -rf -- /root/grokbot/profiles/${botId} /root/grokbot/files/${botId}`, 60);
+  await box.bash(`rm -rf -- /root/botly/profiles/${botId} /root/botly/files/${botId}`, 60);
 }
 
 /** "Sleep" button: put every screen that isn't working right now to sleep. */
@@ -269,7 +269,7 @@ export async function suspendComputer(userId: string, _reason = 'manual'): Promi
  * the screen in the app wakes it too. The blank display itself keeps running; it costs very little,
  * and stopping it would break programs that still hold a connection to it.
  */
-export const SCREEN_SLEEP_MIN = Number(process.env.HQ_SCREEN_SLEEP_MIN ?? 15);
+export const SCREEN_SLEEP_MIN = Number((process.env.BOTLY_SCREEN_SLEEP_MIN ?? process.env.HQ_SCREEN_SLEEP_MIN) ?? 15);
 const lastUsed = new Map<string, number>();
 const screenViewers = new Map<string, number>();
 let busyCheck: (botId: string) => boolean = () => false;

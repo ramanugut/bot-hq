@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 # Nightly backup of everything that makes your Botly yours: chats and settings (database), each
 # bot's memory, skills and sign-ins (Hermes homes), bot browser profiles and Library files.
-# Keeps the last 3 in /opt/hq/backups (KEEP=n to change). Download the newest from the app (account menu → Download backup).
-#   bash /opt/hq/app/scripts/backup.sh
+# Keeps the last 3 in /opt/botly/backups (KEEP=n to change). Download the newest from the app (account menu → Download backup).
+#   bash /opt/botly/app/scripts/backup.sh
 set -euo pipefail
 umask 077
 SOURCE_ROOT="${BOTLY_BACKUP_SOURCE_ROOT:-/}"
-DB_PATH="${BOTLY_BACKUP_DB_PATH:-/opt/hq/data/hq.db}"
-OUT="${BOTLY_BACKUP_DIR:-/opt/hq/backups}"; KEEP="${KEEP:-3}"
+case "${BOTLY_BACKUP_LAYOUT:-botly}" in
+  botly) app_dir=opt/botly; library=root/botly; db_name=botly.db ;;
+  legacy) app_dir=opt/hq; library=root/grokbot; db_name=hq.db ;;
+  *) echo "Invalid backup layout" >&2; exit 2 ;;
+esac
+DB_PATH="${BOTLY_BACKUP_DB_PATH:-$SOURCE_ROOT/$app_dir/data/$db_name}"
+[ -s "$DB_PATH" ] || { echo "Missing database at $DB_PATH" >&2; exit 1; }
+OUT="${BOTLY_BACKUP_DIR:-/opt/botly/backups}"; KEEP="${KEEP:-3}"
 [[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || { echo "KEEP must be positive" >&2; exit 2; }
 mkdir -p "$OUT"; chmod 700 "$OUT"
 stamp="$(date -u +%Y%m%d-%H%M)"
@@ -23,7 +29,7 @@ assert dst.execute('PRAGMA integrity_check').fetchone()[0] == 'ok', 'Invalid SQL
 dst.close(); src.close()
 PY
 tar --warning=no-file-changed -czf "$partial" \
-  --exclude='hq.db' --exclude='hq.db-*' \
+  --exclude="$db_name" --exclude="$db_name-*" \
   --exclude='*/cache' --exclude='*/Cache' --exclude='*/Code Cache' --exclude='*/GPUCache' --exclude='*/CacheStorage' \
   --exclude='*/logs' --exclude='*/node_modules' --exclude='*/.venv' --exclude='*/venv' --exclude='/root/.hermes/hermes-agent' \
   --exclude='*/bot-desktop' --exclude='*/browser-harness' --exclude='*.sock' \
@@ -32,14 +38,15 @@ tar --warning=no-file-changed -czf "$partial" \
   --exclude='*/Safe Browsing' --exclude='*/WidevineCdm' --exclude='*/Crashpad' --exclude='*/OnDeviceHeadSuggestModel' \
   --exclude='*/screen_ai' --exclude='*/hyphen-data' --exclude='*/Subresource Filter' --exclude='*/MEIPreload' \
   --exclude='root/.hermes/cache' --exclude='*/__pycache__' --exclude='*.log' \
-  -C "$SOURCE_ROOT" opt/hq/data opt/hq/app/.env root/.hermes root/grokbot \
+  -C "$SOURCE_ROOT" "$app_dir/data" "$app_dir/app/.env" root/.hermes "$library" \
   -C "$tmp" database-backup.db
 # Publish only a complete archive, keeping old backups on any failure.
-tar -tzf "$partial" >/dev/null
 tar -tzf "$partial" > "$tmp/contents.txt"
 grep -Fxq "database-backup.db" "$tmp/contents.txt"
-grep -Fxq "opt/hq/app/.env" "$tmp/contents.txt"
+grep -Fxq "$app_dir/app/.env" "$tmp/contents.txt"
+grep -Fxq "$library/" "$tmp/contents.txt"
+grep -Fxq 'root/.hermes/' "$tmp/contents.txt"
 chmod 600 "$partial"
-mv -f "$partial" "$OUT/bothq-$stamp.tar.gz"
-ls -1t "$OUT"/bothq-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
-echo "backup: $OUT/bothq-$stamp.tar.gz ($(du -h "$OUT/bothq-$stamp.tar.gz" | cut -f1))"
+mv -f "$partial" "$OUT/botly-$stamp.tar.gz"
+ls -1t "$OUT"/botly-*.tar.gz | tail -n +$((KEEP + 1)) | xargs -r rm -f
+echo "backup: $OUT/botly-$stamp.tar.gz ($(du -h "$OUT/botly-$stamp.tar.gz" | cut -f1))"

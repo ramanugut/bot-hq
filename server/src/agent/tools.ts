@@ -35,13 +35,13 @@ for (const job of interrupted) {
   try { appendRow(job.bot_id, 'notice', { type: 'notice', text: 'A video render was interrupted by a server restart. Please start the render again.', tone: 'error' }); } catch { /* bot may have been deleted */ }
 }
 
-const hyperframesBin = () => (fs.existsSync('/usr/local/bin/hyperframes') ? '/usr/local/bin/hyperframes' : '/opt/hq/node/bin/hyperframes');
+const hyperframesBin = () => (fs.existsSync('/usr/local/bin/hyperframes') ? '/usr/local/bin/hyperframes' : '/opt/botly/node/bin/hyperframes');
 
 /** Run a video render in the background; post the video to the chat (or say why it failed) when it ends. */
 function startRender(botId: string, cmd: string, args: string[], out: string, caption: string, cleanup?: () => void) {
   const env: NodeJS.ProcessEnv = {
     ...process.env,
-    PATH: `/opt/hq/node/bin:${process.env.PATH ?? ''}`,
+    PATH: `/opt/botly/node/bin:${process.env.PATH ?? ''}`,
     HYPERFRAMES_NO_TELEMETRY: '1', HYPERFRAMES_NO_UPDATE_CHECK: '1', HYPERFRAMES_SKIP_SKILLS: '1',
     ...(fs.existsSync('/usr/local/bin/chromium') && !process.env.HYPERFRAMES_BROWSER_PATH ? { HYPERFRAMES_BROWSER_PATH: '/usr/local/bin/chromium' } : {}),
   };
@@ -165,7 +165,7 @@ async function xSearch(a: any): Promise<string> {
 }
 
 /** Where each bot's Library lives on the shared computer. */
-export const LIBRARY_ROOT = '/root/grokbot/files';
+export const LIBRARY_ROOT = '/root/botly/files';
 
 /** Resolve file access within the calling bot's Library, including symlink checks. */
 export const libraryReadPath = (botId: string, requested: string) => safeLibraryReadPath(LIBRARY_ROOT, botId, requested);
@@ -173,7 +173,7 @@ export const libraryReadPath = (botId: string, requested: string) => safeLibrary
 export const TOOLS: ToolDef[] = [
   {
     name: 'save_file',
-    description: "Save a finished deliverable (report, notes, CSV, code, markdown) to your Library so the user can open and download it. Saved under /root/grokbot/files/<your id>/ on your computer. Files you write into that folder yourself show up in the Library too.",
+    description: "Save a finished deliverable (report, notes, CSV, code, markdown) to your Library so the user can open and download it. Saved under /root/botly/files/<your id>/ on your computer. Files you write into that folder yourself show up in the Library too.",
     parameters: obj({ filename: { type: 'string', description: 'e.g. briefing-2026-11-09.md' }, content: { type: 'string' } }, ['filename', 'content']),
     activity: 'drafting_file',
     label: 'Saving a file',
@@ -308,7 +308,7 @@ export const TOOLS: ToolDef[] = [
     impl: async (a) => {
       const q = String(a.query ?? '').trim();
       if (!q) return { output: 'Say what to search for.' };
-      const url = new URL(`${process.env.HQ_SEARXNG_URL ?? 'http://127.0.0.1:8888'}/search`);
+      const url = new URL(`${(process.env.BOTLY_SEARXNG_URL ?? process.env.HQ_SEARXNG_URL) ?? 'http://127.0.0.1:8888'}/search`);
       url.searchParams.set('q', q);
       url.searchParams.set('format', 'json');
       if (a.category) url.searchParams.set('categories', String(a.category));
@@ -406,7 +406,7 @@ export const TOOLS: ToolDef[] = [
     name: 'render_video_project',
     description: "Render a free-form HyperFrames video project you wrote yourself (for ideas the promo templates can't do). The folder must be inside your Library and hold an index.html composition. Run 'hyperframes lint FOLDER' first. Renders in the background (a few minutes); the video appears in the chat by itself.",
     parameters: obj({
-      folder: { type: 'string', description: 'Project folder inside your Library, e.g. /root/grokbot/files/<you>/videos/launch' },
+      folder: { type: 'string', description: 'Project folder inside your Library, e.g. /root/botly/files/<you>/videos/launch' },
       filename: { type: 'string', description: 'e.g. launch.mp4' },
       quality: { type: 'string', enum: ['draft', 'standard'], description: 'Default standard.' },
       caption: { type: 'string' },

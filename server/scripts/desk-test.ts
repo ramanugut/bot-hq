@@ -156,7 +156,7 @@ async function browsers(): Promise<Browser[]> {
     ours: l.includes('--hq-screen='),
   }));
 }
-const browserOf = (list: Browser[], botId: string) => list.find((b) => b.profile === `/root/grokbot/profiles/${botId}`);
+const browserOf = (list: Browser[], botId: string) => list.find((b) => b.profile === `/root/botly/profiles/${botId}`);
 const foreignPids = (list: Browser[]) => list.filter((b) => !b.ours).map((b) => b.pid).sort().join(',');
 
 /** What the home page in the Chrome on `port` says. */
@@ -170,7 +170,7 @@ const greets = (port: number, name: string) => until(async () => ((await homePag
 const windows = (screenId: string) => sh('wmctrl -l 2>/dev/null; true', screenId);
 const look = async (screenId: string) => {
   const n = screenId === 'default' ? 99 : Number(screenId.replace('screen-', ''));
-  const raw = await box.readFile(`/opt/hq/screens/${n}/look.json`);
+  const raw = await box.readFile(`/opt/botly/screens/${n}/look.json`);
   try { return raw ? JSON.parse(raw.toString('utf8')) : null; } catch { return null; }
 };
 

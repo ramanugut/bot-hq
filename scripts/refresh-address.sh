@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Keep the app's address in step with the server's public IP (run at boot by hq-address.service).
+# Keep the app's address in step with the server's public IP (run at boot by botly-address.service).
 # Only for the free https://<ip-with-dashes>.sslip.io address; a custom address is left alone.
 set -euo pipefail
-ENV_FILE="${ENV_FILE:-/opt/hq/app/.env}"
+ENV_FILE="${ENV_FILE:-/opt/botly/app/.env}"
 cur="$(grep -E '^APP_URL=' "$ENV_FILE" | cut -d= -f2-)"
 case "$cur" in https://*.sslip.io) ;; *) echo "custom address $cur: nothing to do"; exit 0 ;; esac
 ip=""
@@ -18,5 +18,5 @@ sed -i -e "s|^APP_URL=.*|APP_URL=$new|" -e "s|^SERVER_URL=.*|SERVER_URL=$new|" "
 port="$(grep -E '^PORT=' "$ENV_FILE" | cut -d= -f2-)"
 printf '%s {\n\treverse_proxy 127.0.0.1:%s\n}\n' "${new#https://}" "${port:-8787}" > /etc/caddy/Caddyfile
 systemctl restart caddy
-supervisorctl restart hq-app >/dev/null
+supervisorctl restart botly-app >/dev/null
 echo "address changed: $cur -> $new"
