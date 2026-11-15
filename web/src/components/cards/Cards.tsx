@@ -209,15 +209,23 @@ export function CardRow({ row }: { row: Row }) {
 }
 
 export function ImageCard({ row, body }: { row: Row; body: Card<'image'> }) {
-  const src = `/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}&inline=1`;
+  const file = `/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}`;
+  const src = `${file}&inline=1`;
+  const media = body.media ?? 'image';
   return (
-    <div className="card image-card" style={{ maxWidth: "min(420px, 100%)", padding: 8 }}>
-      <a href={src} target="_blank" rel="noreferrer">
-        <img src={src} alt={body.caption ?? body.path} loading="lazy" style={{ width: '100%', height: 'auto', borderRadius: 10, display: 'block' }} />
-      </a>
+    <div className="card image-card" style={{ maxWidth: media === 'audio' ? 'min(460px, 100%)' : 'min(420px, 100%)', padding: 8 }}>
+      {media === 'video' ? (
+        <video src={src} controls playsInline preload="metadata" style={{ width: '100%', maxHeight: '70vh', borderRadius: 10, display: 'block', background: '#000' }} />
+      ) : media === 'audio' ? (
+        <audio src={src} controls preload="metadata" style={{ width: '100%', display: 'block' }} />
+      ) : (
+        <a href={src} target="_blank" rel="noreferrer">
+          <img src={src} alt={body.caption ?? body.path} loading="lazy" style={{ width: '100%', height: 'auto', borderRadius: 10, display: 'block' }} />
+        </a>
+      )}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: 12, opacity: 0.7 }}>
         <span>{body.caption ?? body.path}</span>
-        <a href={`/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}`} download>Download</a>
+        <a href={file} download>Download</a>
       </div>
     </div>
   );

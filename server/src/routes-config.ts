@@ -311,18 +311,34 @@ configApi.get('/bots/:id/files/raw', (c) => {
     return c.json({ error: 'not found' }, 404);
   }
   const name = rel.split('/').pop()!;
-  // Raster images can be shown in the chat (?inline=1). SVG stays a download: it can carry scripts.
-  const IMG: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
-  const imgType = c.req.query('inline') === '1' ? IMG[name.split('.').pop()!.toLowerCase()] : undefined;
-  return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, {
-    headers: {
-      'content-type': imgType ?? 'application/octet-stream',
-      'content-length': String(fs.statSync(file).size),
-      'content-disposition': `${imgType ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
-      'x-content-type-options': 'nosniff',
-      ...(imgType ? { 'cache-control': 'private, max-age=86400', 'content-security-policy': "default-src 'none'" } : {}),
-    },
-  });
+  // Raster images, videos and audio can be shown in the chat (?inline=1). SVG/HTML stay downloads: they can carry scripts.
+  const INLINE: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+    mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm',
+    mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg',
+  };
+  const type = c.req.query('inline') === '1' ? INLINE[name.split('.').pop()!.toLowerCase()] : undefined;
+  const size = fs.statSync(file).size;
+  const headers: Record<string, string> = {
+    'content-type': type ?? 'application/octet-stream',
+    'content-disposition': `${type ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'x-content-type-options': 'nosniff',
+    'accept-ranges': 'bytes',
+    ...(type ? { 'cache-control': 'private, max-age=86400', 'content-security-policy': "default-src 'none'" } : {}),
+  };
+  // Phones fetch video in pieces (Range requests) and won't play or seek without them.
+  const range = /^bytes=(\d*)-(\d*)$/.exec(c.req.header('range') ?? '');
+  if (range && size > 0) {
+    let start = range[1] ? Number(range[1]) : size - Number(range[2]);
+    let end = range[1] && range[2] ? Number(range[2]) : size - 1;
+    start = Math.max(0, start); end = Math.min(size - 1, end);
+    if (start > end) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
+    return new Response(Readable.toWeb(fs.createReadStream(file, { start, end })) as ReadableStream, {
+      status: 206,
+      headers: { ...headers, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': String(end - start + 1) },
+    });
+  }
+  return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, { headers: { ...headers, 'content-length': String(size) } });
 });
 
 // ---------- computer: screens, reset, hibernation ----------

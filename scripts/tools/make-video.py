@@ -24,10 +24,18 @@ tmp = tempfile.mkdtemp()
 voice = ''
 if a.voice:
     voice = os.path.join(tmp, 'voice.mp3')
-    try:
-        subprocess.run([sys.executable, '-m', 'edge_tts', '--voice', a.voice_name, '--text', a.voice, '--write-media', voice], check=True, capture_output=True)
-    except Exception as e:
-        print('voice-over skipped (pip install edge-tts):', e, file=sys.stderr); voice = ''
+    # The bot's terminal may run a Python of its own without edge-tts: try each one, then the edge-tts command.
+    tries = [[py, '-m', 'edge_tts'] for py in dict.fromkeys([sys.executable, '/usr/bin/python3', '/usr/local/bin/python3']) if py and os.path.exists(py)]
+    if shutil.which('edge-tts'): tries.append([shutil.which('edge-tts')])
+    errors = []
+    for base in tries:
+        r = subprocess.run(base + ['--voice', a.voice_name, '--text', a.voice, '--write-media', voice], capture_output=True, text=True)
+        if r.returncode == 0 and os.path.exists(voice) and os.path.getsize(voice) > 1000:
+            break
+        errors.append(f"{' '.join(base)}: {(r.stderr or r.stdout).strip().splitlines()[-1:] or ['failed']}")
+    else:
+        print('voice-over skipped. Tried:\n  ' + '\n  '.join(errors) + '\nFix: pip3 install --break-system-packages edge-tts', file=sys.stderr)
+        voice = ''
 per = a.seconds
 if voice:
     dur = float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', voice], capture_output=True, text=True).stdout or 0)

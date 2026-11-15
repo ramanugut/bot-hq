@@ -208,8 +208,8 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'show_image',
-    description: "Show an image in the chat (PNG, JPG, WEBP or GIF). Give the path of an image you made, e.g. one from your image generation tool; it is copied into your Library and appears in the conversation. Call it every time you make an image for the user.",
-    parameters: obj({ path: { type: 'string', description: 'Absolute path of the image file on your computer' }, caption: { type: 'string' } }, ['path']),
+    description: "Show an image, video or audio file in the chat: images (PNG, JPG, WEBP, GIF) appear in the conversation, videos (MP4, WEBM) and audio (MP3, M4A, WAV, OGG) play right there. Give the path of a file you made; it is copied into your Library. Call it every time you make an image, video or voice-over for the user, instead of only writing the file's path.",
+    parameters: obj({ path: { type: 'string', description: 'Absolute path of the file on your computer' }, caption: { type: 'string' } }, ['path']),
     activity: 'drafting_file',
     label: 'Sharing an image',
     impl: async (a, ctx) => {
@@ -481,19 +481,37 @@ export const TOOLS: ToolDef[] = [
  * Put an image into the chat: copy it into the bot's Library and add an image card.
  * Refuses files that are not real images, so a bot cannot report a picture it never made.
  */
+const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+const VIDEO_EXT = ['mp4', 'webm', 'm4v'];
+const AUDIO_EXT = ['mp3', 'm4a', 'wav', 'ogg', 'oga'];
+
+/** Recognise a real image, video or audio file by its first bytes (a bot sometimes writes a path or an error instead). */
+function sniffMedia(data: Buffer): 'image' | 'video' | 'audio' | null {
+  const m = data.subarray(0, 16);
+  const ascii = (a: number, b: number) => m.subarray(a, b).toString('latin1');
+  if ((m[0] === 0x89 && m[1] === 0x50) || (m[0] === 0xff && m[1] === 0xd8) || ascii(0, 3) === 'GIF' || (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP')) return 'image';
+  if (ascii(4, 8) === 'ftyp') return /^(M4A |M4B )/.test(ascii(8, 12)) ? 'audio' : 'video';
+  if (m[0] === 0x1a && m[1] === 0x45 && m[2] === 0xdf && m[3] === 0xa3) return 'video'; // WebM
+  if (ascii(0, 3) === 'ID3' || (m[0] === 0xff && (m[1] & 0xe0) === 0xe0) || ascii(0, 4) === 'OggS' || (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WAVE')) return 'audio';
+  return null;
+}
+
+/** Copy an image, video or audio file into the bot's Library and show it in the chat (playable for video/audio). */
 export async function postImage(botId: string, src: string, caption?: string): Promise<{ ok: boolean; message: string; name?: string }> {
   const ext = (src.split('.').pop() ?? '').toLowerCase();
-  if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return { ok: false, message: 'Only PNG, JPG, WEBP or GIF can be shown. Convert the image first.' };
+  const want = IMAGE_EXT.includes(ext) ? 'image' : VIDEO_EXT.includes(ext) ? 'video' : AUDIO_EXT.includes(ext) ? 'audio' : null;
+  if (!want) return { ok: false, message: 'Only images (PNG, JPG, WEBP, GIF), videos (MP4, WEBM) and audio (MP3, M4A, WAV, OGG) can be shown. Convert the file first (ffmpeg).' };
   const data = await box.readFile(src);
   if (!data) return { ok: false, message: `No file at ${src}.` };
-  const magic = data.subarray(0, 12);
-  const isImage = (magic[0] === 0x89 && magic[1] === 0x50) || (magic[0] === 0xff && magic[1] === 0xd8) || magic.subarray(0, 4).toString() === 'RIFF' || magic.subarray(0, 3).toString() === 'GIF';
-  const pngTiny = magic[0] === 0x89 && data.length >= 24 && (data.readUInt32BE(16) < 64 || data.readUInt32BE(20) < 64);
-  if (!isImage || pngTiny) return { ok: false, message: `${src} is not a real image (${data.length} bytes). Do not claim it was made; generate it again.` };
-  const name = (src.split('/').pop() ?? `image.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
+  const kind = sniffMedia(data);
+  const pngTiny = kind === 'image' && data[0] === 0x89 && data.length >= 24 && (data.readUInt32BE(16) < 64 || data.readUInt32BE(20) < 64);
+  if (!kind || pngTiny || (kind !== 'image') !== (want !== 'image')) {
+    return { ok: false, message: `${src} is not a real ${want} (${data.length} bytes). Do not claim it was made; make it again.` };
+  }
+  const name = (src.split('/').pop() ?? `file.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
   const dest = `${LIBRARY_ROOT}/${botId}/${name}`;
   if (dest !== src) await box.writeFile(dest, data);
-  appendRow(botId, 'card', { type: 'card', card: 'image', path: name, ...(caption ? { caption: caption.slice(0, 300) } : {}) });
+  appendRow(botId, 'card', { type: 'card', card: 'image', path: name, ...(kind !== 'image' ? { media: kind } : {}), ...(caption ? { caption: caption.slice(0, 300) } : {}) });
   return { ok: true, message: `Shown in the chat and saved to the Library as ${name}.`, name };
 }
 

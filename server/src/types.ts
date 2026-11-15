@@ -146,6 +146,8 @@ export type CardBody =
       /** Path inside the bot's Library. */
       path: string;
       caption?: string;
+      /** What the file is; absent = an image (older rows). */
+      media?: 'image' | 'video' | 'audio';
       status?: 'shown';
     };
 
