@@ -79,4 +79,6 @@ Secrets live in `.env` on the server and in each Hermes home.
 | Hermes Agent | The agent loop, tools, memory and model access for every Bot (API keys or subscription sign-ins) |
 | Orgo | The computer, its screens, VNC, and a public URL for the app |
 | Composio | Sign-in, connectors, triggers |
+| Tavily | Optional server-side web search, webpage extract, same-domain site map/crawl and asynchronous cited research via Botly MCP; no key reaches the browser |
+| SearXNG | Free default general web search via `free_search` |
 | xAI | Research on X (`x_search`), realtime voice, TTS, dictation |
