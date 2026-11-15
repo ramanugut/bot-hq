@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Bot HQ on an ordinary Ubuntu server (x86 or ARM), with no Orgo: every bot's screen is an
+# Install Botly on an ordinary Ubuntu server (x86 or ARM), with no Orgo: every bot's screen is an
 # X display on this server (Xvfb + x11vnc), and the app is served over HTTPS by Caddy at
 # https://<public-ip-with-dashes>.sslip.io (free, no domain needed).
 #
@@ -180,7 +180,7 @@ sleep 5
 # Follow the public IP if the server is stopped and started (AWS gives it a new one).
 cat > /etc/systemd/system/hq-address.service <<EOF
 [Unit]
-Description=Keep Bot HQ's address in step with the public IP
+Description=Keep Botly's address in step with the public IP
 After=network-online.target supervisor.service caddy.service
 Wants=network-online.target
 

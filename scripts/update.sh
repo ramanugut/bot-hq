@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Update Bot HQ on the server to the latest code from GitHub. Run as root:
+# Update Botly on the server to the latest code from GitHub. Run as root:
 #   bash /opt/hq/app/scripts/update.sh
 # Keeps settings (.env), data, bots and logins; only the app's code changes.
 set -euo pipefail

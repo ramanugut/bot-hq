@@ -27,7 +27,7 @@ function keys(): Vapid {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(vapid), { mode: 0o600 });
   }
-  webpush.setVapidDetails(env.appUrl.startsWith('https:') ? env.appUrl : 'mailto:bot-hq@localhost', vapid!.publicKey, vapid!.privateKey);
+  webpush.setVapidDetails(env.appUrl.startsWith('https:') ? env.appUrl : 'mailto:botly@localhost', vapid!.publicKey, vapid!.privateKey);
   return vapid!;
 }
 

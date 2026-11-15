@@ -1,10 +1,10 @@
-# Bot HQ (free edition): handover notes
+# Botly: handover notes
 
 Everything an AI assistant or developer needs to keep working on this install. No secrets here.
 
 ## What it is
 A team of AI bots, each with its own Linux screen and Chrome, chatted with from a web app.
-Fork of nickvasilescu/bot-hq, changed to run **without Orgo or any paid key**. Branch: **`free-edition`**.
+Runs **without Orgo or any paid key**. Branch: **`free-edition`**.
 
 - App: Node 22 + Hono + SQLite (`server/`), React + Vite (`web/`).
 - Bots: [Hermes Agent](https://github.com/NousResearch/hermes-agent). The main bot ("Marvelous") is the Hermes

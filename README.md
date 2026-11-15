@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/readme-banner.svg" alt="Bot HQ. Your team. Their own computers." width="100%">
+  <img src="assets/readme-banner.svg" alt="Botly. Your team. Their own computers." width="100%">
 </p>
 
 <p align="center">
@@ -33,7 +33,7 @@
 
 Give a bot a job, connect the apps it needs, and follow its work in chat. Each bot has a name, a look, its own memory, and a screen you can watch or take over. Bots can message each other, run recurring tasks, and talk with you over voice.
 
-The interface is modeled on Grok Bot. Underneath, every bot is a Hermes agent, so it can run on the model subscriptions you already pay for (Claude, ChatGPT, Grok and others) or on API keys.
+Underneath, every bot is a Hermes agent, so it can run on the model subscriptions you already pay for (Claude, ChatGPT, Grok and others) or on API keys.
 
 ## What you get
 
@@ -65,7 +65,7 @@ The interface is modeled on Grok Bot. Underneath, every bot is a Hermes agent, s
 
 ```mermaid
 flowchart LR
-  B["Browser<br/>chat · viewer · voice"] -- "HTTP + SSE" --> S["Bot HQ server<br/>Node · Hono · SQLite"]
+  B["Browser<br/>chat · viewer · voice"] -- "HTTP + SSE" --> S["Botly server<br/>Node · Hono · SQLite"]
   B -- "WebSocket (VNC)" --> S
   S -- "POST /v1/responses" --> H1["Hermes gateway<br/>first bot (already running)"]
   S -- "POST /v1/responses" --> H2["Hermes gateway<br/>one per extra bot"]
@@ -86,9 +86,9 @@ More detail is in the [architecture guide](docs/ARCHITECTURE.md).
 
 ### How this relates to Hermes Bot Mode
 
-Hermes Desktop has its own Bot Mode. Bot HQ uses the same Hermes engine but does **not** use Bot Mode: it has its own bot layer on top of the gateway's HTTP API.
+Hermes Desktop has its own Bot Mode. Botly uses the same Hermes engine but does **not** use Bot Mode: it has its own bot layer on top of the gateway's HTTP API.
 
-| | Bot HQ | Hermes Bot Mode |
+| | Botly | Hermes Bot Mode |
 |---|---|---|
 | A bot is | A separate Hermes home (the first bot is the default profile) | A Hermes profile |
 | Gateways | One per extra bot | One, serving every profile |
@@ -137,7 +137,7 @@ Then delete the public URL in Orgo. Screens of the other bots are released when 
 You need **Node.js 22 or newer** and a Hermes gateway with its API server on (`API_SERVER_KEY` in `~/.hermes/.env`).
 
 ```bash
-git clone https://github.com/nickvasilescu/bot-hq.git
+git clone https://github.com/ramanugut/bot-hq.git
 cd bot-hq
 npm ci
 cp .env.example .env      # fill in the keys; comments in the file explain each one
@@ -186,11 +186,11 @@ docs/               architecture; the Orgo and xAI/Composio guides predate the H
 - Experimental, no security audit. Bots share one computer and can reach each other's files there.
 - Approval cards cover Composio write actions. What a bot does through its browser or shell is not gated, and Hermes' own "risky command" prompts are not shown in the app yet.
 - Four bots at most, because of Orgo's four-screen limit.
-- The app still calls itself "Grokbot" in places (page title, package names, the database file).
+- A few internal names on disk (the `/root/grokbot` files folder, the `grokbot.db` database file, the `bothq-` backup file names) keep their old spelling so existing installs keep working.
 - The screen look is an original implementation inspired by OrgoAI/bops; no code or assets from that repository are used.
 
 ## License and credits
 
 Project code is available under the [MIT license](LICENSE). The bot artwork and some icons come from Grok Bot's design and remain the property of their owners, as do third-party app logos; the MIT license does not cover them. See [third-party notices](THIRD_PARTY_NOTICES.md).
 
-Continued from [grokbot-clone](https://github.com/nickvasilescu/grokbot-clone). Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Orgo](https://orgo.ai), [Composio](https://composio.dev), and [xAI](https://x.ai). This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.
+Built with [Hermes Agent](https://github.com/NousResearch/hermes-agent), [Orgo](https://orgo.ai), [Composio](https://composio.dev), and [xAI](https://x.ai). This is an independent project, unaffiliated with xAI, Cursor/Anysphere or Nous Research.

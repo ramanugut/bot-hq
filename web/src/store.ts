@@ -51,11 +51,11 @@ interface State {
   set(p: Partial<State>): void;
 }
 
-const LS_SELECTED = 'grokbot.selectedBot';
-const LS_DETAILS = 'grokbot.detailsOpen';
+const LS_SELECTED = 'botly.selectedBot';
+const LS_DETAILS = 'botly.detailsOpen';
 /** Phone-sized screen: one pane at a time, the sidebar and details slide over the chat. */
 export const isPhone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 760px)').matches;
-const LS_SIDEBAR = 'grokbot.sidebarCollapsed';
+const LS_SIDEBAR = 'botly.sidebarCollapsed';
 const lsGet = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
 
@@ -195,7 +195,7 @@ export const useStore = create<State>((set, get) => ({
       case 'tasks':
       case 'memories':
         // Picked up by configStore.ts (Tasks view, Library/Tasks tabs, bot settings).
-        window.dispatchEvent(new CustomEvent('grokbot:event', { detail: ev }));
+        window.dispatchEvent(new CustomEvent('botly:event', { detail: ev }));
         return;
       case 'connections':
         set((st) => ({ connectionsVersion: st.connectionsVersion + 1 }));

@@ -35,7 +35,7 @@ function Shell() {
     if (want) { st.selectBot(want); history.replaceState(null, '', '/'); }
     // OAuth popups post back here; refresh connection-dependent views and the open transcript.
     const onMsg = (e: MessageEvent) => {
-      if ((e.data as { type?: string })?.type !== 'grokbot-connected') return;
+      if ((e.data as { type?: string })?.type !== 'botly-connected') return;
       const s = useStore.getState();
       s.set({ connectionsVersion: s.connectionsVersion + 1 });
       if (s.selectedBotId) s.loadRows(s.selectedBotId).catch(() => {});

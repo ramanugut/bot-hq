@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nightly backup of everything that makes your Bot HQ yours: chats and settings (database), each
+# Nightly backup of everything that makes your Botly yours: chats and settings (database), each
 # bot's memory, skills and sign-ins (Hermes homes), bot browser profiles and Library files.
 # Keeps the last 3 in /opt/hq/backups (KEEP=n to change). Download the newest from the app (account menu → Download backup).
 #   bash /opt/hq/app/scripts/backup.sh
