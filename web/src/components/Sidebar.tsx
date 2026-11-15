@@ -1,4 +1,5 @@
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
+import { disablePush, enablePush, pushEnabled } from '../lib/push';
 import { useConfigUI } from '../configStore';
 import { TasksIsland } from './config/TasksView';
 import type { Bot } from '@shared/types';
@@ -13,6 +14,7 @@ function initials(name: string) {
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
 }
 
+const alertNote = (m: string) => { useStore.getState().set({ notice: m }); setTimeout(() => useStore.getState().set({ notice: null }), 5000); };
 const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const;
 const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' } as const;
 
@@ -60,6 +62,8 @@ export function Sidebar() {
   const set = useStore((s) => s.set);
   const features = useStore((s) => s.features);
   const theme = useConfigUI((s) => s.theme);
+  const [notifOn, setNotifOn] = useState(false);
+  useEffect(() => { void pushEnabled().then(setNotifOn).catch(() => {}); }, []);
   const storeSelectBot = useStore((s) => s.selectBot);
   // Picking a bot (even the one already selected) leaves the Tasks view.
   const selectBot = useCallback((id: string) => { useConfigUI.getState().setView('chat'); storeSelectBot(id); if (isPhone()) useStore.getState().set({ sidebarCollapsed: true }); }, [storeSelectBot]);
@@ -139,6 +143,8 @@ export function Sidebar() {
                 onClose={() => setAccountMenu(false)}
                 items={[
                   { label: 'Settings', hint: '⌘,', onSelect: () => useConfigUI.getState().openAppSettings() },
+                  { label: notifOn ? 'Notifications: on' : 'Turn on notifications', onSelect: () => { (notifOn ? disablePush() : enablePush()).then((m) => { alertNote(m); void pushEnabled().then(setNotifOn); }).catch((e) => alertNote(String(e?.message ?? e))); } },
+                  { label: 'Download backup', onSelect: () => { window.location.href = '/api/backups/latest'; } },
                   { label: `Appearance: ${THEME_LABEL[theme]}`, onSelect: () => useConfigUI.getState().setTheme(NEXT_THEME[theme]) },
                   ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
                   { label: 'Log out', danger: true, onSelect: logout },

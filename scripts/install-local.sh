@@ -3,9 +3,13 @@
 # X display on this server (Xvfb + x11vnc), and the app is served over HTTPS by Caddy at
 # https://<public-ip-with-dashes>.sslip.io (free, no domain needed).
 #
-# Run it as root from the repo clone at /opt/hq/app, AFTER Hermes is installed and has a model:
-#
-#   ALLOWED_EMAILS=you@example.com bash /opt/hq/app/scripts/install-local.sh
+# Fresh server, as root:
+#   1. git clone -b free-edition https://github.com/ramanugut/bot-hq.git /opt/hq/app
+#   2. curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash && source ~/.bashrc
+#      hermes model          (pick "ChatGPT or Codex Subscription" and sign in)
+#   3. ALLOWED_EMAILS=you@example.com bash /opt/hq/app/scripts/install-local.sh
+#   4. bash /opt/hq/app/scripts/set-password.sh you@example.com
+# Later updates: bash /opt/hq/app/scripts/update.sh
 #
 # Optional: PUBLIC_URL (default https://<ip>.sslip.io), MAX_BOTS (default 2), PORT (8787),
 # XAI_API_KEY / COMPOSIO_API_KEY (voice, X research, connected apps; all optional).
@@ -74,6 +78,8 @@ for t in ('hermes-api-server', 'computer_use'):
 pt['api_server'] = cur
 # Nobody can answer Hermes' own approval prompts through the app; bots ask in the chat instead.
 c.setdefault('approvals', {})['mode'] = 'off'
+# Images on the ChatGPT sign-in (no API key needed); harmless if another provider is used.
+c.setdefault('image_gen', {}).setdefault('provider', 'openai-codex')
 shutil.copy2(p, f'{p}.before-hq-{int(time.time())}')
 yaml.safe_dump(c, open(p, 'w'), sort_keys=False)
 PY
@@ -185,6 +191,10 @@ WantedBy=multi-user.target
 EOF
 systemctl daemon-reload
 systemctl enable hq-address.service >/dev/null 2>&1
+
+# Nightly backup at 02:30 UTC; keeps the last 7.
+printf '30 2 * * * root /bin/bash %s/scripts/backup.sh >/var/log/hq/backup.log 2>&1\n' "$APP" > /etc/cron.d/hq-backup
+chmod 644 /etc/cron.d/hq-backup
 
 echo
 echo "Done. Open: $PUBLIC_URL"

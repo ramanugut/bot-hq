@@ -3,6 +3,7 @@ import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { box } from '../box.js';
 import { env } from '../env.js';
+import { notifyBot } from '../push.js';
 import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, isOnceSchedule, userTimezone } from '../store.js';
 import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '../composio.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
@@ -342,6 +343,7 @@ export const TOOLS: ToolDef[] = [
       if (!name) return { output: 'A bot needs a name.' };
       if (botByName(ctx.userId, name)) return { output: `There is already a bot called ${name}. Pick another name.` };
       if (a.confirmed !== true) {
+        notifyBot(ctx.botId, `Wants to create a new bot "${name}"`, 'question');
         appendRow(ctx.botId, 'card', { type: 'card', card: 'question', question: `Create a new bot "${name}" (${String(a.job ?? '').slice(0, 80)})?`, options: ['Yes, create it', 'No'], status: 'pending' });
         return { output: 'Asked the user to confirm. Stop here; if they answer Yes, call create_bot again with the same details and confirmed=true.', endTurn: true };
       }
@@ -362,6 +364,7 @@ export const TOOLS: ToolDef[] = [
     label: 'Waiting on you',
     impl: async (a, ctx) => {
       appendRow(ctx.botId, 'card', { type: 'card', card: 'question', question: a.question, options: (a.options ?? []).slice(0, 6), status: 'pending' });
+      notifyBot(ctx.botId, `Needs your answer: ${a.question}`, 'question');
       return { output: 'Question shown to the user. Stop here and wait for their answer.', endTurn: true };
     },
   },

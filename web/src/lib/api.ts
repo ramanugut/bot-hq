@@ -35,6 +35,12 @@ export const api = {
   passwordLogin: (email: string, password: string) => req<{ ok: true }>('POST', '/auth/password', { email, password }),
   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
   setTimezone: (tz: string) => req<{ ok: true }>('POST', '/me/timezone', { tz }),
+  pushKey: () => req<{ key: string }>('GET', '/push/key'),
+  pushSubscribe: (sub: unknown) => req<{ ok: true }>('POST', '/push/subscribe', sub),
+  pushUnsubscribe: (endpoint: string) => req<{ ok: true }>('POST', '/push/unsubscribe', { endpoint }),
+  pushTest: () => req<{ ok: true }>('POST', '/push/test'),
+  usage: () => req<{ usage: { plan?: string; windows: { label: string; usedPercent: number; resetsAt: number | null }[]; checkedAt: number } | null }>('GET', '/usage'),
+  presence: () => req<{ ok: true }>('POST', '/presence'),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
 
   bots: () => req<{ bots: Bot[]; live: LiveState[] }>('GET', '/bots'),

@@ -8,6 +8,7 @@ import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
+import { notifyBot } from '../push.js';
 import { activityFor, appToolName, humanizeSlug, policyFor, postImage, splitMedia } from './tools.js';
 
 /**
@@ -331,6 +332,7 @@ async function runTurn(botId: string, trigger: Trigger) {
     if (text.trim()) {
       flush(false);
       db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
+      if (!turn.silent) notifyBot(botId, text.trim());
     } else updateRow(botId, msgSeq, { type: 'message', role: 'assistant', text: '', streaming: false });
     msgSeq = null;
     text = '';
@@ -343,6 +345,7 @@ async function runTurn(botId: string, trigger: Trigger) {
     closeMessage();
     appendRow(botId, 'message', { type: 'message', role: 'assistant', text: t.trim(), streaming: false });
     db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
+    notifyBot(botId, t.trim());
     wroteText = true;
   };
 

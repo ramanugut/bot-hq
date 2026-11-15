@@ -10,6 +10,7 @@ import { ToolkitLogo } from './ToolkitLogo';
 import { VoiceSettings } from './VoiceSettings';
 import { ComputerScreen, type ScreenMode } from './ComputerViewer';
 import { EngineSettings } from './EngineSettings';
+import { UsageMeter } from './UsageMeter';
 import { MembersCard } from './MembersCard';
 import { useConfigUI } from '../configStore';
 import { Glyph } from './config/glyphs';
@@ -141,6 +142,7 @@ export function DetailsPanel() {
                 <section>
                   <div className="section-label">Engine</div>
                   <EngineSettings bot={bot} />
+                  <UsageMeter />
                 </section>
                 {features.voice && (
 <section>

@@ -10,6 +10,8 @@ interface State {
   user: User | null;
   devLogin: boolean;
   googleLogin: boolean;
+  /** A short message shown at the bottom of the screen. */
+  notice: string | null;
   /** Paid add-ons that are switched on: xAI voice, Composio apps. */
   features: { voice: boolean; apps: boolean };
   authChecked: boolean;
@@ -57,6 +59,7 @@ export const useStore = create<State>((set, get) => ({
   user: null,
   devLogin: false,
   googleLogin: false,
+  notice: null,
   features: { voice: false, apps: false },
   authChecked: false,
   bots: [],

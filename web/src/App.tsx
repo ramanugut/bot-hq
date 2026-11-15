@@ -13,6 +13,7 @@ import { SearchModal } from './components/modals/SearchModal';
 import { ConfigLayer } from './components/config/ConfigLayer';
 import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
+import { startPresence } from './lib/push';
 
 function Shell() {
   const detailsOpen = useStore((s) => s.detailsOpen);
@@ -21,12 +22,17 @@ function Shell() {
   const collapsed = useStore((s) => s.sidebarCollapsed);
   const hasBot = useStore((s) => !!s.selectedBotId);
   const view = useConfigUI((s) => s.view);
+  const notice = useStore((s) => s.notice);
 
   useEffect(() => {
     const st = useStore.getState();
     st.loadBots().catch(console.error);
     st.loadComputer().catch(console.error);
     const stop = startEvents();
+    const stopPresence = startPresence();
+    // Opened from a notification: go straight to that bot.
+    const want = new URLSearchParams(location.search).get('bot');
+    if (want) { st.selectBot(want); history.replaceState(null, '', '/'); }
     // OAuth popups post back here; refresh connection-dependent views and the open transcript.
     const onMsg = (e: MessageEvent) => {
       if ((e.data as { type?: string })?.type !== 'grokbot-connected') return;
@@ -35,7 +41,7 @@ function Shell() {
       if (s.selectedBotId) s.loadRows(s.selectedBotId).catch(() => {});
     };
     window.addEventListener('message', onMsg);
-    return () => { stop(); window.removeEventListener('message', onMsg); };
+    return () => { stop(); stopPresence(); window.removeEventListener('message', onMsg); };
   }, []);
 
   // Global shortcuts: ⌘K search, ⌘B sidebar, ⇧⌘, details, ⌘N new bot.
@@ -66,6 +72,7 @@ function Shell() {
       {modal === 'apps' && <ConnectAppsModal />}
       {viewerOpen && <ComputerViewer />}
       <ConfigLayer />
+      {notice && <div className="app-notice" role="status">{notice}</div>}
     </div>
   );
 }

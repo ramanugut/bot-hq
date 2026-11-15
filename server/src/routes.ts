@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import { Readable } from 'node:stream';
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -18,6 +20,8 @@ import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
 import type { AvatarColor, AvatarShape, Toolkit } from './types.js';
+import { chatgptUsage } from './usage.js';
+import { markPresent, notify, pushPublicKey, removeSubscription, saveSubscription } from './push.js';
 import { checkPassword, hashPassword, noteFailure, tooManyTries } from './lib/password.js';
 
 export const api = new Hono<AuthVars>();
@@ -197,6 +201,31 @@ api.use('/*', async (c, next) => {
   if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/apps/callback') || c.req.path === '/api/health') return next();
   return requireUser(c, next);
 });
+
+// ---------- notifications ----------
+api.get('/push/key', (c) => c.json({ key: pushPublicKey() }));
+api.post('/push/subscribe', async (c) => {
+  try { saveSubscription(c.get('user').id, await c.req.json()); return c.json({ ok: true }); } catch (e: any) { return c.json({ error: e.message }, 400); }
+});
+api.post('/push/unsubscribe', async (c) => {
+  const { endpoint } = await c.req.json<{ endpoint?: string }>().catch(() => ({} as any));
+  if (endpoint) removeSubscription(c.get('user').id, endpoint);
+  return c.json({ ok: true });
+});
+api.post('/push/test', async (c) => { await notify(c.get('user').id, { title: 'Bot HQ', body: 'Notifications are working.', tag: 'test' }, true); return c.json({ ok: true }); });
+// The app window is visible: hold back notifications for things the user can already see.
+// Backups made by scripts/backup.sh (nightly). The newest one can be downloaded from the app.
+api.get('/backups/latest', (c) => {
+  const dir = '/opt/hq/backups';
+  let files: string[] = [];
+  try { files = fs.readdirSync(dir).filter((f) => /^bothq-\d{8}-\d{4}\.tar\.gz$/.test(f)).sort(); } catch { /* none yet */ }
+  const f = files.pop();
+  if (!f) return c.text('No backup yet. The first one is made tonight, or run: bash /opt/hq/app/scripts/backup.sh', 404);
+  const full = `${dir}/${f}`;
+  return new Response(Readable.toWeb(fs.createReadStream(full)) as ReadableStream, { headers: { 'content-type': 'application/gzip', 'content-length': String(fs.statSync(full).size), 'content-disposition': `attachment; filename="${f}"` } });
+});
+api.get('/usage', async (c) => c.json({ usage: await chatgptUsage() }));
+api.post('/presence', (c) => { markPresent(c.get('user').id); return c.json({ ok: true }); });
 
 // The browser tells us the user's time zone, so "8am" in a routine means their 8am.
 api.post('/me/timezone', async (c) => {
