@@ -34,11 +34,11 @@ function previewFor(bot: Bot, running: boolean, awaiting: string | null) {
   return bot.lastPreview ?? 'No messages yet';
 }
 
-const BotRow = memo(function BotRow({ bot, selected, running, awaiting, onSelect }: { bot: Bot; selected: boolean; running: boolean; awaiting: string | null; onSelect: (id: string) => void }) {
+const BotRow = memo(function BotRow({ bot, selected, running, awaiting, onSelect, star }: { bot: Bot; selected: boolean; running: boolean; awaiting: string | null; onSelect: (id: string) => void; star?: boolean }) {
   return (
     <button type="button" className={`bot-row${selected ? ' is-selected' : ''}`} onClick={() => onSelect(bot.id)} aria-current={selected || undefined}>
       <span className="bot-row__avatar">
-        <BotAvatarFor bot={bot} size={36} />
+        <BotAvatarFor bot={bot} size={36} star={star} />
         {(running || awaiting || bot.unread > 0) && (
           <span className={`status-dot ${awaiting ? 'is-attention' : running ? 'is-working' : 'is-unread'}`} aria-label={awaiting ? 'Needs attention' : running ? 'Working' : 'Unread activity'} />
         )}
@@ -96,7 +96,7 @@ export function Sidebar() {
 
       <div className="sidebar__scroll">
         <TasksIsland />
-        {primary && (
+        {primary && collapsed && (
           <div className="pinned">
             <button type="button" className={`pinned__tile${selectedBotId === primary.id ? ' is-selected' : ''}`} onClick={() => selectBot(primary.id)} title={displayName(primary)}>
               <span className="pinned__avatar">
@@ -108,6 +108,9 @@ export function Sidebar() {
           </div>
         )}
         <div className="bot-list">
+          {primary && !collapsed && (
+            <BotRow bot={primary} star selected={selectedBotId === primary.id} running={!!live[primary.id]?.isRunning} awaiting={live[primary.id]?.awaiting?.reason ?? null} onSelect={selectBot} />
+          )}
           {others.map((b) =>
             collapsed ? (
               <button key={b.id} type="button" className={`bot-rail-item${selectedBotId === b.id ? ' is-selected' : ''}`} onClick={() => selectBot(b.id)} title={displayName(b)}>
