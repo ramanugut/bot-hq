@@ -221,7 +221,7 @@ api.post('/backups/latest', async (c) => {
   if (!env.ownerEmail || user.email.toLowerCase() !== env.ownerEmail) return c.json({ error: 'Owner access required.' }, 403);
   const attemptKey = `backup:${user.id}`;
   if (tooManyTries(attemptKey, 5)) return c.json({ error: 'Too many attempts. Try again later.' }, 429);
-  const payload = await c.req.json<{ password?: string }>().catch(() => ({}));
+  const payload = await c.req.json<{ password?: string }>().catch((): { password?: string } => ({}));
   const record = db.prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as { password_hash: string | null } | undefined;
   if (!payload.password || !checkPassword(String(payload.password), record?.password_hash)) {
     noteFailure(attemptKey);
