@@ -14,7 +14,7 @@ Runs **without Orgo or any paid key**. Branch: **`free-edition`**.
   Main bot on `:99`, others `:100`, `:101`… Chrome DevTools port = 9200 + display (main bot 9299).
 - Images: Hermes `image_gen.provider: openai-codex`. Hermes replies `MEDIA:/path` lines; the app turns them into
   image cards (`server/src/agent/loop.ts`, `postImage` in `tools.ts`).
-- Web search: Tavily key in `/root/.hermes/.env`.
+- Web search: free SearXNG remains the first-choice provider. Botly's own Tavily REST tools can read `TAVILY_API_KEY` from the app environment, `TAVILY_API_KEY_FILE`, or the primary Hermes `.env` (without copying secrets to GitHub).
 
 ## Server
 - AWS EC2 `bot-hq`, eu region, **t4g.small (ARM, 2 GB) + 4 GB swap**, Ubuntu 24.04, AWS free-plan credits.
@@ -120,6 +120,13 @@ Hermes browser/shell actions bypass Botly MCP approvals. Migrating to separate n
 users, isolation and an enforceable broker requires a planned server cutover and testing.
 See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
  
+## Tavily (code on GitHub, not yet verified on EC2)
+- Native MCP tools: `tavily_search`, `tavily_extract`, `tavily_map`, `tavily_crawl`, `tavily_research`, and `tavily_research_status`. These use Tavily's REST API without installing a CLI or extra Node packages.
+- Search and extract are read-only calls. Mapping, crawling, and starting a deep research job require approval in Botly because they can consume more Tavily credits. Research uses Tavily `mini` and returns a task ID; check with `tavily_research_status`.
+- Website targets must be public HTTP(S) hostnames; crawling is bounded to 8 pages, mapping to 30, and external domains are disabled. Web content is untrusted data.
+- Configure the API key outside GitHub: in `/opt/hq/app/.env` as `TAVILY_API_KEY`, via `TAVILY_API_KEY_FILE`, or in the primary Hermes `.env` (existing setup). No need to copy a real key into source code.
+- After an owner-approved deployment: verify the key is available, run `npm run typecheck`, `npm run test:hardening` and ask a Botly bot to run `tavily_search` for a harmless query. Check Tavily dashboard usage. No live Tavily test from this GitHub-only change.
+
 ## Open items
 1. Usage meter (`server/src/usage.ts`) shows nothing yet: the shape of Hermes' `auth.json` and the Codex
    usage endpoint response need checking on the server.
