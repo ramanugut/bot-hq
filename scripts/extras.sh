@@ -19,6 +19,13 @@ main() {
       || { echo "  note: MarkItDown did not install:"; tail -5 /var/log/hq/markitdown.log; }
   fi
 
+  # ---------- HyperFrames: renders the promo videos (HTML + GSAP -> MP4 with this server's Chromium)
+  if [ ! -x /opt/hq/node/bin/hyperframes ] || ! /opt/hq/node/bin/hyperframes --version 2>/dev/null | grep -q '^0\.9\.53'; then
+    echo "Installing the video engine (HyperFrames)..."
+    PATH=/opt/hq/node/bin:$PATH npm i -g --no-audit --no-fund hyperframes@0.9.53 >/var/log/hq/hyperframes.log 2>&1 \
+      && echo "  video engine ready" || { echo "  note: HyperFrames did not install"; tail -5 /var/log/hq/hyperframes.log; }
+  fi
+
   # ---------- SearXNG in Docker, reachable only from this server
   local dir=/opt/hq/searxng
   if ! command -v docker >/dev/null 2>&1; then

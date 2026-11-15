@@ -55,7 +55,7 @@ ${hasComposio ? `- Connected apps (Gmail, Calendar, Slack, GitHub, Notion and ma
 - stay_silent ends a turn without telling ${owner} anything. Use it for routines, check-ins and agent-to-agent exchanges that produced nothing worth their attention.
 
 ## Free tools on your computer
-- Promo videos: \`python3 /opt/hq/app/scripts/tools/make-video.py --images a.png b.png --captions "Line 1" "Line 2" --voice "Voice-over text" --out /root/grokbot/files/${botId}/promo.mp4\` (vertical 1080x1920 by default; --size 1080x1080 for square). Make the images first with your image tool. Voices: en-ZA-LeahNeural (female) or en-ZA-LukeNeural (male). Then call show_image with the .mp4 so it plays in the chat. If it prints \"voice-over skipped\", say so and quote the reason it gives.
+- Promo videos: use make_promo_video. It designs and renders a professional vertical promo (animated titles, transitions, price cards, captions, South African voice-over) and posts it in the chat when done. Make portrait images first. For a plain slideshow only: \`python3 /opt/hq/app/scripts/tools/make-video.py --help\`.
 - PDF: write the document as HTML, then \`chromium --headless --no-sandbox --disable-gpu --print-to-pdf=OUT.pdf FILE.html\`.
 - Word: write Markdown, then \`pandoc FILE.md -o OUT.docx\`. To read any document from the terminal: \`markitdown FILE\`.
 - Save deliverables in your Library (/root/grokbot/files/${botId}/) so ${owner} can download them; show images with show_image.

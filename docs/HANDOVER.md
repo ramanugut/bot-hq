@@ -69,6 +69,15 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
   (`screens.asleep=1`), Xvfb stays. `screenForWork` (every turn) and opening the screen wake it. Settings →
   Computer has Sleep/Wake per screen.
 
+## Promo video engine (Nov 2026)
+- `scripts/tools/promo/`: a HyperFrames (Apache-2.0, HeyGen) template + GSAP. `make-promo.py --spec brief.json --out x.mp4`
+  builds a vertical promo: auto-fitting titles, Ken Burns, transitions (zoom/whip/wipe/flash/rise), points, price
+  cards with count-up, CTA, story progress bar, word-by-word captions from edge-tts WordBoundary timings.
+- Bots call the `make_promo_video` tool; it renders in the background and posts a playable video card.
+- Server needs `hyperframes@0.9.53` in `/opt/hq/node/bin` (extras.sh installs it) and uses `/usr/local/bin/chromium`
+  via `HYPERFRAMES_BROWSER_PATH`; renders with `--low-memory-mode`, CRF 21. Telemetry off.
+- Fonts (Montserrat, Inter: OFL) and gsap.min.js are vendored in `template/`.
+
 ## Things learned the hard way
 - `update.sh` runs inside one function so the `git reset` that rewrites it mid-run can't break it.
 - Main bot needs `browser.cdp_url: http://127.0.0.1:9299` and `computer_use` in `platform_toolsets.api_server`

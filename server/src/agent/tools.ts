@@ -12,6 +12,11 @@ import { setCheckins } from '../proactive.js';
 import { createRoom, postToRoom } from './rooms.js';
 import type { ActivityKind } from '../types.js';
 import { Cron } from 'croner';
+import fs from 'node:fs';
+import { spawn } from 'node:child_process';
+
+/** Bots with a promo video rendering right now (one at a time each). */
+const rendering = new Set<string>();
 
 export interface ToolCtx {
   userId: string;
@@ -203,6 +208,59 @@ export const TOOLS: ToolDef[] = [
       return {
         output: mins ? `Heartbeat on: every ${every}${r.heartbeat_quiet ? ', not at night' : ''}. Checklist:\n${r.heartbeat_checklist || '(empty: add one so you know what to check)'}` : 'Heartbeat off.',
         summary: mins ? `Heartbeat every ${every}` : 'Heartbeat off',
+      };
+    },
+  },
+  {
+    name: 'make_promo_video',
+    description: "Make a polished vertical promo video (1080x1920, for Reels/TikTok/Shorts/Status): bold animated titles that always fit the screen, slow cinematic camera moves over your images, transitions, price cards with counting numbers, a call-to-action ending, a story progress bar, and word-by-word captions timed to a free South African voice-over. It renders in the background (2 to 6 minutes) and the finished video appears in the chat by itself. Make the images first (your image tool, portrait 1080x1920 works best). The brief: {brand:{name,url,logo?,accent?,accent2?,deep?}, voice?:'en-ZA-LeahNeural'|'en-ZA-LukeNeural'|'', music?:path, captions?:bool, scenes:[...]}. Scene types: hero {image,kicker?,title,sub?,say}, points {image?,title,points:[3-4 short lines],say}, prices {image?,title,plans:[{name,price:'R49',per:'/mo',features:[..],popular?:true}],say}, cta {title,button,url?,say}. 'say' is that scene's voice-over line (one short sentence, 6-16 words); the scene lasts as long as its line. Put *stars* around 1-2 words in a title to colour them. Keep titles under 6 words. 4-5 scenes make a 15-25 second video. Colours are hex codes; accent is the main highlight colour.",
+    parameters: obj({
+      brief: { type: 'object', description: 'The video brief described above.' },
+      filename: { type: 'string', description: 'e.g. hosting-promo.mp4' },
+      quality: { type: 'string', enum: ['draft', 'standard'], description: 'draft is faster, for a first look. Default standard.' },
+      caption: { type: 'string', description: 'Short line shown under the video in the chat.' },
+    }, ['brief']),
+    activity: 'drafting_file',
+    label: 'Making a video',
+    impl: async (a, ctx) => {
+      if (!box.local) return { output: 'Video rendering runs only on the self-hosted server.' };
+      const brief = typeof a.brief === 'string' ? (() => { try { return JSON.parse(a.brief); } catch { return null; } })() : a.brief;
+      if (!brief || !Array.isArray(brief.scenes) || !brief.scenes.length) return { output: 'The brief needs a scenes list (see the tool description).' };
+      const missing = brief.scenes.flatMap((s: any) => (s?.image && !fs.existsSync(s.image) ? [s.image] : []));
+      if (brief.brand?.logo && !fs.existsSync(brief.brand.logo)) missing.push(brief.brand.logo);
+      if (missing.length) return { output: `These files do not exist: ${missing.join(', ')}. Make or find them first.` };
+      if (rendering.has(ctx.botId)) return { output: 'A video is already rendering for you; it will appear in the chat when done. Wait for it.' };
+      const name = (String(a.filename || 'promo.mp4').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]*$/, '') || 'promo') + '.mp4';
+      const dir = `${LIBRARY_ROOT}/${ctx.botId}`;
+      const out = `${dir}/${name}`;
+      const specFile = `${dir}/.promo-${Date.now()}.json`;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(specFile, JSON.stringify(brief));
+      const script = new URL('../../../scripts/tools/promo/make-promo.py', import.meta.url).pathname;
+      const env = { ...process.env, PATH: `/opt/hq/node/bin:${process.env.PATH ?? ''}` };
+      const p = spawn('python3', [script, '--spec', specFile, '--out', out, '--quality', a.quality === 'draft' ? 'draft' : 'standard'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+      rendering.add(ctx.botId);
+      let log = '';
+      p.stdout.on('data', (d) => { log += d; });
+      p.stderr.on('data', (d) => { log += d; });
+      const started = Date.now();
+      p.on('close', async (code) => {
+        rendering.delete(ctx.botId);
+        fs.rmSync(specFile, { force: true });
+        const secs = Math.round((Date.now() - started) / 1000);
+        if (code === 0 && fs.existsSync(out)) {
+          const r = await postImage(ctx.botId, out, a.caption ? String(a.caption) : `${name} · rendered in ${secs}s`);
+          if (!r.ok) appendRow(ctx.botId, 'notice', { type: 'notice', text: r.message, tone: 'error' });
+          const note = /no voice-over|voice-over skipped/.test(log) ? ' (without voice-over: the voice service did not answer)' : '';
+          notifyBot(ctx.botId, `Your video is ready${note}`);
+        } else {
+          console.warn('[promo] render failed', log.slice(-2000));
+          appendRow(ctx.botId, 'notice', { type: 'notice', text: `The video could not be made: ${log.trim().split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400)}`, tone: 'error' });
+        }
+      });
+      return {
+        output: `Rendering started (${brief.scenes.length} scenes). It takes 2 to 6 minutes and appears in the chat by itself, saved as ${out}. Tell the user it is on its way; do not wait, poll or render it again.`,
+        summary: 'Rendering the video',
       };
     },
   },
