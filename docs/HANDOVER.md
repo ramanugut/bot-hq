@@ -139,3 +139,9 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
   terminal at hidden prompts (`read -rsp`).
 - Commit to `free-edition`, then run `scripts/update.sh` on the server.
 - Ask the owner before anything that costs money (bigger EC2, paid APIs).
+
+## UI refinement (15 Nov 2026, GitHub only)
+- The inline thinking mascot/status box was replaced by a monochrome, animated activity signal in `web/src/components/ActivityLine.tsx` and `web/src/styles/refinement.css`. Modes follow existing Hermes live activity and running tools (thinking, search, read, browser, write, code, create, connect and waiting). No new tools or background activity are implied.
+- Botly's main toolbar, shared icons, settings icons and Tasks icon have softer outlines, rounded controls, quiet shadows and tighter grouping. Existing actions and navigation remain unchanged. Reduced-motion settings stop activity animations.
+- CSS refinement loads last from `web/src/main.tsx`; change or remove it to adjust the style without rewriting existing layout styles.
+- The same UI-only changes are backported to `legacy-hq-tavily` for servers still using `/opt/hq`. Deploy that branch only on the old layout; do not run the renamed `free-edition` updater there. Neither branch was deployed by these GitHub commits.
