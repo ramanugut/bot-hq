@@ -84,6 +84,14 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
 - Free-form: `render_video_project` renders a HyperFrames project the bot wrote in its Library; `/usr/local/bin/hyperframes`
   (from extras.sh) is a wrapper with our Node, Chromium and telemetry off.
 
+## Motion Engine (Nov 2026, GitHub only)
+- `scripts/tools/motion/`: motion graphics from a storyboard (text, numbers, lists, charts, quotes, logo), no photos
+  or voice needed. Bot tool `make_motion_graphic` (needs approval). Details: `docs/MOTION-ENGINE.md`.
+- Unlimited seeded styles: same seed = same look. 16 presets. A quality gate rejects bad storyboards before rendering
+  and sends the rule breaks back to the bot.
+- Uses the promo engine's HyperFrames, Chromium, gsap.min.js and render slot. No new installs. NOT deployed or
+  timed on EC2 yet.
+
 ## Things learned the hard way
 - `update.sh` runs inside one function so the `git reset` that rewrites it mid-run can't break it.
 - Main bot needs `browser.cdp_url: http://127.0.0.1:9299` and `computer_use` in `platform_toolsets.api_server`

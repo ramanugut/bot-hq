@@ -1,0 +1,46 @@
+{
+  "title": "Botly Motion demo",
+  "format": "16:9",
+  "duration": 15.0,
+  "bpm": 120,
+  "brand": "Botly",
+  "dna": {
+    "seed": "botly-demo-1"
+  },
+  "beats": [
+    {
+      "component": "hero-title",
+      "seconds": 3,
+      "text": "Videos made from one sentence",
+      "emphasis": "one sentence"
+    },
+    {
+      "component": "stat-counter",
+      "seconds": 2.5,
+      "value": 127401984,
+      "label": "possible styles"
+    },
+    {
+      "component": "list-reveal",
+      "seconds": 4,
+      "title": "How it works",
+      "items": [
+        "Pick a style",
+        "Write the beats",
+        "Render the video"
+      ]
+    },
+    {
+      "component": "cta-card",
+      "seconds": 3.0,
+      "text": "Try a new seed",
+      "emphasis": "new seed",
+      "button": "Make a video"
+    },
+    {
+      "component": "logo-sting",
+      "seconds": 2.5,
+      "tagline": "Motion Engine"
+    }
+  ]
+}

@@ -8,6 +8,7 @@
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "test:motion": "node --test scripts/tools/motion/test/engine.test.mjs",
     "test:hardening": "npm run build -w server && node --test tests/hardening.test.mjs && bash -n scripts/backup.sh scripts/update.sh && bash tests/backup.test.sh"
   },
   "engines": { "node": ">=22" }

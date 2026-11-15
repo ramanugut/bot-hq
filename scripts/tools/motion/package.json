@@ -1,0 +1,7 @@
+{
+  "name": "botly-motion",
+  "private": true,
+  "type": "module",
+  "description": "Botly Motion Engine: seeded Style DNA + storyboard JSON -> HyperFrames (HTML + GSAP) -> MP4. No npm dependencies.",
+  "scripts": { "test": "node --test test/engine.test.mjs" }
+}

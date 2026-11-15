@@ -1,0 +1,135 @@
+{
+  "title": "Every component",
+  "format": "16:9",
+  "duration": 38.5,
+  "brand": "Botly",
+  "dna": {
+    "seed": "all-components"
+  },
+  "beats": [
+    {
+      "component": "hero-title",
+      "seconds": 2.5,
+      "text": "Thirteen building blocks",
+      "emphasis": "Thirteen"
+    },
+    {
+      "component": "kinetic-line",
+      "seconds": 3,
+      "text": "Each one animates in every style without new code",
+      "emphasis": "every style"
+    },
+    {
+      "component": "stat-counter",
+      "seconds": 2.5,
+      "value": 99.5,
+      "suffix": "%",
+      "label": "example figure"
+    },
+    {
+      "component": "list-reveal",
+      "seconds": 3.5,
+      "title": "Three steps",
+      "items": [
+        "Style",
+        "Storyboard",
+        "Render"
+      ]
+    },
+    {
+      "component": "split-compare",
+      "seconds": 3.5,
+      "left": {
+        "label": "Before",
+        "text": "Hand-built in an editor"
+      },
+      "right": {
+        "label": "After",
+        "text": "Generated from JSON"
+      }
+    },
+    {
+      "component": "chart",
+      "seconds": 3.5,
+      "title": "Example data",
+      "type": "bar",
+      "data": [
+        {
+          "label": "Mon",
+          "value": 12
+        },
+        {
+          "label": "Tue",
+          "value": 19
+        },
+        {
+          "label": "Wed",
+          "value": 27
+        },
+        {
+          "label": "Thu",
+          "value": 41
+        }
+      ]
+    },
+    {
+      "component": "quote",
+      "seconds": 3.5,
+      "text": "Design is the content",
+      "emphasis": "content",
+      "by": "Section two of the spec"
+    },
+    {
+      "component": "steps",
+      "seconds": 3.5,
+      "title": "The pipeline",
+      "items": [
+        "Brief",
+        "Compile",
+        "Check",
+        "Render"
+      ]
+    },
+    {
+      "component": "icon-grid",
+      "seconds": 3,
+      "items": [
+        {
+          "icon": "bolt",
+          "label": "Fast"
+        },
+        {
+          "icon": "lock",
+          "label": "Deterministic"
+        },
+        {
+          "icon": "globe",
+          "label": "Any format"
+        }
+      ]
+    },
+    {
+      "component": "ui-pan",
+      "seconds": 3,
+      "text": "A mock screen with a slow pan"
+    },
+    {
+      "component": "lower-third",
+      "seconds": 2.5,
+      "text": "Name straps too",
+      "name": "Example Person",
+      "title": "Example title"
+    },
+    {
+      "component": "cta-card",
+      "seconds": 2.0,
+      "text": "Make one now",
+      "button": "Start"
+    },
+    {
+      "component": "logo-sting",
+      "seconds": 2.5,
+      "tagline": "Motion Engine"
+    }
+  ]
+}
