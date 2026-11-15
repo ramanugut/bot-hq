@@ -47,6 +47,7 @@ function botByName(userId: string, name: string) {
 /** Live X research through xAI's search tool. Returns the answer text followed by the posts it cites. */
 async function xSearch(a: any): Promise<string> {
   const clean = (v: unknown) => (Array.isArray(v) ? v.map((h) => String(h).replace(/^@/, '').trim()).filter(Boolean).slice(0, 10) : []);
+  if (!env.xaiKey) return 'Research on X is off on this install: XAI_API_KEY is not set.';
   const tool: Record<string, unknown> = { type: 'x_search' };
   const only = clean(a.handles);
   const not = clean(a.exclude_handles);
@@ -99,8 +100,26 @@ export const TOOLS: ToolDef[] = [
     impl: async (a, ctx) => {
       const name = String(a.filename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) || 'file.txt';
       const file = `${LIBRARY_ROOT}/${ctx.botId}/${name}`;
-      await box.writeFile(file, String(a.content ?? ''));
+      const content = String(a.content ?? '');
+      // A bot that passes a file's path as the content means "save that file": copy it rather than write the path.
+      const asPath = /^\/\S+$/.test(content.trim()) ? await box.readFile(content.trim()) : null;
+      if (asPath && /\.(png|jpe?g|webp|gif)$/i.test(name)) {
+        const r = await postImage(ctx.botId, content.trim());
+        return { output: r.message, ...(r.ok ? { summary: `Saved ${r.name}` } : {}) };
+      }
+      await box.writeFile(file, asPath ?? content);
       return { output: JSON.stringify({ ok: true, path: file }), summary: `Saved ${name}` };
+    },
+  },
+  {
+    name: 'show_image',
+    description: "Show an image in the chat (PNG, JPG, WEBP or GIF). Give the path of an image you made, e.g. one from your image generation tool; it is copied into your Library and appears in the conversation. Call it every time you make an image for the user.",
+    parameters: obj({ path: { type: 'string', description: 'Absolute path of the image file on your computer' }, caption: { type: 'string' } }, ['path']),
+    activity: 'drafting_file',
+    label: 'Sharing an image',
+    impl: async (a, ctx) => {
+      const r = await postImage(ctx.botId, String(a.path ?? ''), a.caption ? String(a.caption) : undefined);
+      return { output: r.message, ...(r.ok ? { summary: `Shared ${r.name}` } : {}) };
     },
   },
   {
@@ -300,6 +319,34 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'create_bot',
+    description: "Create a new Bot on the user's team (it gets its own screen and browser). Only when the user asks for a new bot. First call it without confirmed: that shows the user a Yes/No card and ends your turn. Call it again with confirmed=true only after the user answered Yes.",
+    parameters: obj({
+      name: { type: 'string', description: 'Short first name, e.g. Mia' },
+      job: { type: 'string', description: 'One-line role, e.g. Social media manager' },
+      instructions: { type: 'string', description: 'How this bot should work, in the user\'s words where possible' },
+      confirmed: { type: 'boolean', description: 'true only after the user said Yes on the card' },
+    }, ['name', 'job', 'instructions', 'confirmed']),
+    activity: 'working',
+    label: 'Setting up a new Bot',
+    impl: async (a, ctx) => {
+      const name = String(a.name ?? '').trim().slice(0, 60);
+      if (!name) return { output: 'A bot needs a name.' };
+      if (botByName(ctx.userId, name)) return { output: `There is already a bot called ${name}. Pick another name.` };
+      if (a.confirmed !== true) {
+        appendRow(ctx.botId, 'card', { type: 'card', card: 'question', question: `Create a new bot "${name}" (${String(a.job ?? '').slice(0, 80)})?`, options: ['Yes, create it', 'No'], status: 'pending' });
+        return { output: 'Asked the user to confirm. Stop here; if they answer Yes, call create_bot again with the same details and confirmed=true.', endTurn: true };
+      }
+      try {
+        const { createBot } = await import('../routes.js');
+        const b = createBot(ctx.userId, { name, label: String(a.job ?? '').slice(0, 60), description: String(a.job ?? ''), instructions: String(a.instructions ?? '') });
+        return { output: `Created ${b.name}. It is starting its own agent and screen; you can message it with send_to_bot in a minute.`, summary: `Created ${b.name}` };
+      } catch (e: any) {
+        return { output: `Could not create the bot: ${e?.message ?? e}` };
+      }
+    },
+  },
+  {
     name: 'ask_user',
     description: 'Ask the user a multiple-choice question when you need a decision before continuing. Ends your turn; their answer arrives as their next message.',
     parameters: obj({ question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, ['question', 'options']),
@@ -324,6 +371,37 @@ export const TOOLS: ToolDef[] = [
     },
   },
 ];
+
+/**
+ * Put an image into the chat: copy it into the bot's Library and add an image card.
+ * Refuses files that are not real images, so a bot cannot report a picture it never made.
+ */
+export async function postImage(botId: string, src: string, caption?: string): Promise<{ ok: boolean; message: string; name?: string }> {
+  const ext = (src.split('.').pop() ?? '').toLowerCase();
+  if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return { ok: false, message: 'Only PNG, JPG, WEBP or GIF can be shown. Convert the image first.' };
+  const data = await box.readFile(src);
+  if (!data) return { ok: false, message: `No file at ${src}.` };
+  const magic = data.subarray(0, 12);
+  const isImage = (magic[0] === 0x89 && magic[1] === 0x50) || (magic[0] === 0xff && magic[1] === 0xd8) || magic.subarray(0, 4).toString() === 'RIFF' || magic.subarray(0, 3).toString() === 'GIF';
+  const pngTiny = magic[0] === 0x89 && data.length >= 24 && (data.readUInt32BE(16) < 64 || data.readUInt32BE(20) < 64);
+  if (!isImage || pngTiny) return { ok: false, message: `${src} is not a real image (${data.length} bytes). Do not claim it was made; generate it again.` };
+  const name = (src.split('/').pop() ?? `image.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
+  const dest = `${LIBRARY_ROOT}/${botId}/${name}`;
+  if (dest !== src) await box.writeFile(dest, data);
+  appendRow(botId, 'card', { type: 'card', card: 'image', path: name, ...(caption ? { caption: caption.slice(0, 300) } : {}) });
+  return { ok: true, message: `Shown in the chat and saved to the Library as ${name}.`, name };
+}
+
+/** Hermes marks files for the person with lines like "MEDIA:/path/to/file.png". Split those out of a reply. */
+export function splitMedia(text: string): { text: string; paths: string[] } {
+  const paths: string[] = [];
+  const kept = text.split('\n').filter((line) => {
+    const m = /^\s*MEDIA:\s*(\/\S+)\s*$/.exec(line);
+    if (m) paths.push(m[1]);
+    return !m;
+  });
+  return { text: kept.join('\n'), paths };
+}
 
 export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
 

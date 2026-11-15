@@ -203,6 +203,22 @@ export function CardRow({ row }: { row: Row }) {
     case 'question': return <QuestionCard row={row} body={b} />;
     case 'connect': return <ConnectCard row={row} body={b} />;
     case 'draft': return <DraftCard body={b} />;
+    case 'image': return <ImageCard row={row} body={b} />;
     default: return null;
   }
+}
+
+export function ImageCard({ row, body }: { row: Row; body: Card<'image'> }) {
+  const src = `/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}&inline=1`;
+  return (
+    <div className="card image-card" style={{ maxWidth: 420 }}>
+      <a href={src} target="_blank" rel="noreferrer">
+        <img src={src} alt={body.caption ?? body.path} loading="lazy" style={{ width: '100%', height: 'auto', borderRadius: 10, display: 'block' }} />
+      </a>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+        <span>{body.caption ?? body.path}</span>
+        <a href={`/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}`} download>Download</a>
+      </div>
+    </div>
+  );
 }

@@ -357,7 +357,8 @@ voiceApi.post('/tool', async (c) => {
   }
 });
 
-const xai = new OpenAI({ apiKey: env.xaiKey, baseURL: XAI, timeout: 45_000 });
+// A placeholder key keeps start-up working without xAI; calls then fail with xAI's own 401.
+const xai = new OpenAI({ apiKey: env.xaiKey || 'not-set', baseURL: XAI, timeout: 45_000 });
 
 async function summarizeCall(botName: string, transcript: { role: string; text: string }[], tasks: string[]): Promise<string | null> {
   if (!transcript.length && !tasks.length) return null;

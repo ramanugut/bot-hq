@@ -275,12 +275,16 @@ configApi.get('/bots/:id/files/raw', (c) => {
     return c.json({ error: 'not found' }, 404);
   }
   const name = rel.split('/').pop()!;
+  // Raster images can be shown in the chat (?inline=1). SVG stays a download: it can carry scripts.
+  const IMG: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
+  const imgType = c.req.query('inline') === '1' ? IMG[name.split('.').pop()!.toLowerCase()] : undefined;
   return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, {
     headers: {
-      'content-type': 'application/octet-stream',
+      'content-type': imgType ?? 'application/octet-stream',
       'content-length': String(fs.statSync(file).size),
-      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
+      'content-disposition': `${imgType ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
       'x-content-type-options': 'nosniff',
+      ...(imgType ? { 'cache-control': 'private, max-age=86400', 'content-security-policy': "default-src 'none'" } : {}),
     },
   });
 });

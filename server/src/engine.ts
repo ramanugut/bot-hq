@@ -109,7 +109,7 @@ const SHARED_ENV = [
 ];
 
 /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
-const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers'];
+const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers', 'image_gen'];
 
 function soul(b: any): string {
   const owner = (db.prepare('SELECT name FROM users WHERE id=?').get(b.user_id) as any)?.name ?? 'the user';

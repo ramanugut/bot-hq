@@ -121,6 +121,14 @@ export type CardBody =
       text: string;
       approvalId: string;
       status: 'pending' | 'sent' | 'discarded';
+    }
+  | {
+      type: 'card';
+      card: 'image';
+      /** Path inside the bot's Library. */
+      path: string;
+      caption?: string;
+      status?: 'shown';
     };
 
 export interface EventBody {

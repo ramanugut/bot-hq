@@ -7,7 +7,7 @@ import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
 import { engineFor } from '../engine.js';
 import { instructionsFor } from './prompt.js';
-import { activityFor, appToolName, humanizeSlug, policyFor } from './tools.js';
+import { activityFor, appToolName, humanizeSlug, policyFor, postImage, splitMedia } from './tools.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -320,8 +320,13 @@ async function runTurn(botId: string, trigger: Trigger) {
     else updateRow(botId, msgSeq, b);
     lastFlush = Date.now();
   };
+  const shareMedia = (paths: string[]) => {
+    for (const p of paths) void postImage(botId, p).then((r) => { if (!r.ok) appendRow(botId, 'notice', { type: 'notice', text: r.message, tone: 'error' }); }).catch(() => {});
+  };
   const closeMessage = () => {
     if (msgSeq === null) return;
+    const media = splitMedia(text);
+    if (media.paths.length) { text = media.text; shareMedia(media.paths); }
     if (text.trim()) {
       flush(false);
       db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
@@ -329,7 +334,10 @@ async function runTurn(botId: string, trigger: Trigger) {
     msgSeq = null;
     text = '';
   };
-  const say = (t: string) => {
+  const say = (raw: string) => {
+    const media = splitMedia(raw);
+    if (!turn.silent) shareMedia(media.paths);
+    const t = media.text;
     if (turn.silent || !t.trim()) return;
     closeMessage();
     appendRow(botId, 'message', { type: 'message', role: 'assistant', text: t.trim(), streaming: false });

@@ -9,13 +9,21 @@ function req(name: string): string {
 }
 
 /** A secret from NAME, or from the file named by NAME_FILE (so keys need not sit in .env). */
-function secret(name: string): string {
+function secret(name: string, optional = false): string {
   const direct = process.env[name];
   if (direct) return direct;
   const file = process.env[`${name}_FILE`];
   if (file) return fs.readFileSync(file, 'utf8').trim();
+  if (optional) return '';
   throw new Error(`Missing env ${name} (or ${name}_FILE)`);
 }
+
+/**
+ * Where the bots' screens come from. "orgo": an Orgo computer (needs ORGO_API_KEY). "local": X displays
+ * on this machine (Xvfb + x11vnc), no Orgo at all. Default: local unless an Orgo key is set.
+ */
+const screensMode = process.env.HQ_SCREENS ?? (process.env.ORGO_API_KEY || process.env.ORGO_API_KEY_FILE ? 'orgo' : 'local');
+const localScreens = screensMode === 'local';
 
 const hermesHome = process.env.HERMES_HOME_PRIMARY ?? path.join(os.homedir(), '.hermes');
 
@@ -24,10 +32,14 @@ export const env = {
   appUrl: process.env.APP_URL ?? 'http://localhost:5173',
   /** Public URL of this server, used for OAuth callbacks. */
   serverUrl: process.env.SERVER_URL ?? `http://localhost:${process.env.PORT ?? 8787}`,
-  xaiKey: req('XAI_API_KEY'),
+  /** Optional: without it voice and research on X are off. */
+  xaiKey: process.env.XAI_API_KEY ?? '',
   xaiModel: process.env.XAI_MODEL ?? 'grok-4.7',
-  composioKey: req('COMPOSIO_API_KEY'),
-  orgoKey: secret('ORGO_API_KEY'),
+  /** Optional: without it there are no connected apps. */
+  composioKey: process.env.COMPOSIO_API_KEY ?? '',
+  orgoKey: secret('ORGO_API_KEY', localScreens),
+  /** Screens are X displays on this machine instead of an Orgo computer. */
+  localScreens,
   sessionSecret: req('SESSION_SECRET'),
   devLogin: process.env.DEV_LOGIN === '1',
   dbPath: process.env.DB_PATH ?? new URL('../../data/grokbot.db', import.meta.url).pathname,
@@ -51,9 +63,9 @@ export const env = {
 
   // ---- the one shared computer ----
   /** The Orgo computer every bot works on (one screen each). Empty = legacy one-box-per-user mode is not supported. */
-  orgoComputerId: process.env.ORGO_COMPUTER_ID ?? '',
+  orgoComputerId: localScreens ? 'local' : process.env.ORGO_COMPUTER_ID ?? '',
   /** This server runs on that computer, so shell commands run locally instead of through Orgo's API. */
-  localBox: process.env.HQ_LOCAL === '1',
+  localBox: localScreens || process.env.HQ_LOCAL === '1',
   /**
    * DevTools URL of a Chrome that already runs on the default screen and belongs to the primary bot
    * (e.g. http://127.0.0.1:9333). When set, we never start or stop that screen's Chrome ourselves.
