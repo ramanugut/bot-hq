@@ -73,10 +73,26 @@ const Bubble = memo(function Bubble({ row, side, pos }: { row: Row; side: 'left'
           </div>
         )}
       </div>
-      <span className="bubble__time">{clock(row.createdAt)}</span>
+      <span className="bubble__time">
+        {clock(row.createdAt)}
+        {side === 'left' && !b.streaming && b.text && typeof speechSynthesis !== 'undefined' && (
+          <button type="button" className="bubble__speak" onClick={() => speak(b.text)} aria-label="Read aloud" title="Read aloud">🔊</button>
+        )}
+      </span>
     </div>
   );
 });
+
+/** Free read-aloud with the device's own voices (no server, no key). Tap again to stop. */
+function speak(text: string) {
+  if (speechSynthesis.speaking) { speechSynthesis.cancel(); return; }
+  const plain = text.replace(/```[\s\S]*?```/g, ' ').replace(/[*_#>`|]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/MEDIA:\S+/g, '');
+  const u = new SpeechSynthesisUtterance(plain.slice(0, 4000));
+  const voices = speechSynthesis.getVoices();
+  u.voice = voices.find((v) => /en-ZA/i.test(v.lang)) ?? voices.find((v) => /^en/i.test(v.lang) && /natural|neural|google/i.test(v.name)) ?? voices.find((v) => /^en/i.test(v.lang)) ?? null;
+  u.rate = 1.02;
+  speechSynthesis.speak(u);
+}
 
 function SenderLabel({ from }: { from: NonNullable<MessageBody['from']> }) {
   const bot = useStore((s) => (from.kind === 'bot' ? s.bots.find((b) => b.id === from.id) : undefined));

@@ -9,6 +9,15 @@ import { useDictation } from '../voice/dictation';
 import { browserDictationSupported, useBrowserDictation } from '../voice/browserDictation';
 
 const MAX_H = 200;
+
+/** Ready-made jobs: the text goes into the message box so you can adjust it before sending. */
+const RECIPES = [
+  { label: '✨ Social media autopilot', prompt: 'Set up a social media autopilot for my business [name, what we sell, prices, website]. Every Monday at 8am: plan 3 posts for the week (Facebook and Instagram), make an image for each with your image tool, write the captions, and show me the drafts here. Only post after I say yes, using the browser on your screen where I am logged in. Use create_routine for the weekly schedule.' },
+  { label: '✨ Job search assistant', prompt: 'Help me find jobs. Profile: [role, years of experience, skills, location or remote, minimum salary]. My CV is attached. Every weekday at 7am: search the job sites (PNet, LinkedIn, Careers24, Indeed SA) for new matching jobs and send me the best 5 with links and why they fit. For any I approve, write a tailored CV and cover letter as PDFs in your Library. Never apply without my yes. Use create_routine for the daily search.' },
+  { label: '✨ Support desk helper', prompt: 'Every morning at 8am, check [my support inbox or ticket system] in the browser on your screen, list the new tickets by urgency, and draft a reply for each. Show me the drafts here and only send the ones I approve. Use create_routine for the daily check.' },
+  { label: '✨ Daily briefing', prompt: 'Every weekday at 7:30am send me a short briefing: the weather in [city], important new emails in my Gmail (open it in your browser), anything on my calendar today, and [anything else]. Keep it to 8 lines. Use create_routine for the schedule.' },
+  { label: '✨ Promo video', prompt: 'Make a 15-second vertical promo video for [product/offer and price]: create 4 images with your image tool, then use make-video.py with short captions and a South African voice-over. Save it to the Library and show me.' },
+];
 const drafts = new Map<string, string>();
 
 export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
@@ -122,6 +131,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
                 onClose={() => setMenu(false)}
                 items={[
                   { label: 'Attach files', onSelect: () => fileRef.current?.click() },
+                  ...RECIPES.map((r) => ({ label: r.label, onSelect: () => { setText(r.prompt); requestAnimationFrame(() => ref.current?.focus()); } })),
                   { label: 'New conversation', onSelect: fresh },
                   ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
                 ]}
