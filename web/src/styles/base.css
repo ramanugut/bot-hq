@@ -142,3 +142,5 @@ a { color: inherit; }
 @keyframes robot-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes robot-spin { from { transform: scaleX(1); } 50% { transform: scaleX(-0.2); } to { transform: scaleX(1); } }
 @media (prefers-reduced-motion: reduce) { .robot__eyes, .robot__eye, .robot__antenna-tip, .robot__prop { animation: none !important; } }
+/* dark robots stay visible on a dark background */
+:root[data-theme='dark'] .robot__body { filter: drop-shadow(0 0 0.6px #FFFFFF99); }

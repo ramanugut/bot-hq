@@ -13,6 +13,9 @@ function initials(name: string) {
   return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase() || '?';
 }
 
+const THEME_LABEL = { system: 'System', light: 'Light', dark: 'Dark' } as const;
+const NEXT_THEME = { system: 'light', light: 'dark', dark: 'system' } as const;
+
 export function TrafficLights() {
   return (
     <div className="traffic-lights" aria-hidden>
@@ -56,6 +59,7 @@ export function Sidebar() {
   const collapsed = useStore((s) => s.sidebarCollapsed);
   const set = useStore((s) => s.set);
   const features = useStore((s) => s.features);
+  const theme = useConfigUI((s) => s.theme);
   const storeSelectBot = useStore((s) => s.selectBot);
   // Picking a bot (even the one already selected) leaves the Tasks view.
   const selectBot = useCallback((id: string) => { useConfigUI.getState().setView('chat'); storeSelectBot(id); if (isPhone()) useStore.getState().set({ sidebarCollapsed: true }); }, [storeSelectBot]);
@@ -135,6 +139,7 @@ export function Sidebar() {
                 onClose={() => setAccountMenu(false)}
                 items={[
                   { label: 'Settings', hint: '⌘,', onSelect: () => useConfigUI.getState().openAppSettings() },
+                  { label: `Appearance: ${THEME_LABEL[theme]}`, onSelect: () => useConfigUI.getState().setTheme(NEXT_THEME[theme]) },
                   ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
                   { label: 'Log out', danger: true, onSelect: logout },
                 ]}
