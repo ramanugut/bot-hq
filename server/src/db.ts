@@ -159,5 +159,25 @@ addColumn('bots', 'engine_port', 'INTEGER');
 addColumn('bots', 'handback_at', 'INTEGER');
 addColumn('screens', 'width', 'INTEGER');
 addColumn('screens', 'height', 'INTEGER');
+// A sleeping screen: its browser and display are stopped to save memory; work wakes it again.
+addColumn('screens', 'asleep', 'INTEGER NOT NULL DEFAULT 0');
+// Heartbeat: the bot checks its checklist every N minutes (0 = off) and only speaks when something needs the user.
+addColumn('bots', 'heartbeat_min', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('bots', 'heartbeat_checklist', "TEXT NOT NULL DEFAULT ''");
+addColumn('bots', 'heartbeat_quiet', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('bots', 'heartbeat_last_at', 'INTEGER');
+addColumn('bots', 'heartbeat_last_note', 'TEXT');
+
+// Chats: every "generation" of a bot's conversation is one chat. This table only holds what the
+// rows can't tell: a title, whether it is archived, and a note to hand the bot on its next turn.
+db.exec(`CREATE TABLE IF NOT EXISTS chats (
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  generation INTEGER NOT NULL,
+  title TEXT,
+  archived INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (bot_id, generation)
+)`);
 
 export const now = () => Date.now();

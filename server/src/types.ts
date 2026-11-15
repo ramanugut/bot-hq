@@ -32,10 +32,28 @@ export interface Bot {
   model: string | null;
   provider: string | null;
   generation: number;
+  /** Heartbeat: check in every N minutes (0 = off), with this checklist; quiet at night when set. */
+  heartbeatMin: number;
+  heartbeatChecklist: string;
+  heartbeatQuiet: boolean;
+  heartbeatLastAt: number | null;
+  heartbeatLastNote: string | null;
   unread: number;
   lastPreview: string | null;
   lastActivityAt: number;
   createdAt: number;
+}
+
+/** One of a bot's chats (a "generation" of its conversation). */
+export interface ChatInfo {
+  generation: number;
+  title: string;
+  preview: string | null;
+  messages: number;
+  archived: boolean;
+  current: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** A transcript row. `seq` orders rows; `updatedSeq` is a per-bot revision counter (rows are rewritten while streaming). */
@@ -133,7 +151,7 @@ export type CardBody =
 
 export interface EventBody {
   type: 'event';
-  event: 'routine-created' | 'routine-updated' | 'routine-run' | 'task-changed' | 'bot-message' | 'conversation-cleared' | 'computer' | 'voice-call';
+  event: 'routine-created' | 'routine-updated' | 'routine-run' | 'task-changed' | 'bot-message' | 'conversation-cleared' | 'computer' | 'voice-call' | 'chat-merged' | 'heartbeat';
   text: string;
   ref?: string;
   /** voice-call only: the call record (set on the end-of-call row). */
@@ -188,7 +206,7 @@ export interface ComputerState {
   orgoId: string | null;
   error: string | null;
   /** One screen per bot on the shared computer. width/height are the screen's pixel size. */
-  screens: { botId: string; screenId: string; width?: number; height?: number }[];
+  screens: { botId: string; screenId: string; width?: number; height?: number; asleep?: boolean }[];
   /** How many bots can have their own screen at once. */
   maxScreens?: number;
 }
@@ -227,7 +245,8 @@ export interface Toolkit {
 export type ServerEvent =
   | { type: 'hello'; serverTime: number }
   | { type: 'rows'; botId: string; generation: number; rows: Row[] }
-  | { type: 'cleared'; botId: string; generation: number }
+  | { type: 'cleared'; botId: string; generation: number; reload?: boolean }
+  | { type: 'chats'; botId: string }
   | { type: 'live'; state: LiveState }
   | { type: 'roster' }
   | { type: 'bot'; bot: Bot }

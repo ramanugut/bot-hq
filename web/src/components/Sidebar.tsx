@@ -66,7 +66,15 @@ export function Sidebar() {
   useEffect(() => { void pushEnabled().then(setNotifOn).catch(() => {}); }, []);
   const storeSelectBot = useStore((s) => s.selectBot);
   // Picking a bot (even the one already selected) leaves the Tasks view.
-  const selectBot = useCallback((id: string) => { useConfigUI.getState().setView('chat'); storeSelectBot(id); if (isPhone()) useStore.getState().set({ sidebarCollapsed: true }); }, [storeSelectBot]);
+  const selectBot = useCallback((id: string) => {
+    const st = useStore.getState();
+    const inChat = useConfigUI.getState().view === 'chat';
+    useConfigUI.getState().setView('chat');
+    // Clicking the bot that is already open shows its other chats.
+    if (inChat && st.selectedBotId === id) st.set({ chatsOpen: isPhone() ? true : !st.chatsOpen });
+    else storeSelectBot(id);
+    if (isPhone()) useStore.getState().set({ sidebarCollapsed: true });
+  }, [storeSelectBot]);
   const setModal = useStore((s) => s.setModal);
   const [accountMenu, setAccountMenu] = useState(false);
   const logout = async () => { await api.logout().catch(() => {}); location.reload(); };

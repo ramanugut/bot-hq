@@ -7,7 +7,7 @@ import { vncAuthResponse } from './lib/des.js';
 import { orgo } from './orgo.js';
 import { env } from './env.js';
 import { vncPortFor } from './localscreen.js';
-import { readyScreen, screenFor } from './computer.js';
+import { readyScreen, screenFor, screenViewer, wakeScreen } from './computer.js';
 import { viewerClosed, viewerOpened } from './idle.js';
 
 /**
@@ -156,13 +156,14 @@ async function relay(client: WebSocket, userId: string, botId: string, mode: 'wa
     const fwd = mode === 'watch' ? filter.feed(Buffer.from(data)) : Buffer.from(data);
     if (fwd.length && upstream?.readyState === WebSocket.OPEN) upstream.send(fwd);
   });
-  client.on('close', () => { viewerClosed(userId); fromClient.close(new Error('client closed')); try { upstream?.close(); } catch { /* */ } });
+  client.on('close', () => { viewerClosed(userId); screenViewer(botId, -1); fromClient.close(new Error('client closed')); try { upstream?.close(); } catch { /* */ } });
   viewerOpened(userId); // keeps the computer awake while someone is watching (see idle.ts)
+  screenViewer(botId, 1); // and this bot's screen out of sleep
 
   try {
     const { computerId, screenId } = await screenFor(userId, botId);
-    // A screen nobody has used yet is bare; set it up while the person is already watching.
-    readyScreen(userId, botId).catch(() => {});
+    // A screen nobody has used yet is bare (or asleep); set it up while the person is already watching.
+    wakeScreen(userId, botId).then(() => readyScreen(userId, botId)).catch(() => {});
     const { password } = await orgo.vncPassword(computerId);
     const onData = (data: Buffer) => {
       if (!piping) return fromUp.push(Buffer.from(data));

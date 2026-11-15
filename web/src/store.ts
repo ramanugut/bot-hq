@@ -34,6 +34,10 @@ interface State {
   viewerMode: 'watch' | 'control';
   /** One line shown under the large computer view while the person is driving (e.g. a sign-in to finish). */
   viewerHint: string | null;
+  /** The chat list of the open bot. */
+  chatsOpen: boolean;
+  /** Bumped per bot when its chat list changes, so an open list refetches. */
+  chatsVersion: Record<string, number>;
 
   checkAuth(): Promise<void>;
   loadBots(): Promise<void>;
@@ -76,6 +80,8 @@ export const useStore = create<State>((set, get) => ({
   viewerOpen: false,
   viewerMode: 'watch',
   viewerHint: null,
+  chatsOpen: false,
+  chatsVersion: {},
 
   async checkAuth() {
     try {
@@ -100,6 +106,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   selectBot(id) {
+    if (get().selectedBotId !== id) set({ chatsOpen: false });
     set({ selectedBotId: id });
     lsSet(LS_SELECTED, id);
     const t = get().transcripts[id];
@@ -158,7 +165,13 @@ export const useStore = create<State>((set, get) => ({
         s.upsertRows(ev.botId, ev.generation, ev.rows);
         return;
       case 'cleared':
-        set((st) => ({ transcripts: { ...st.transcripts, [ev.botId]: { generation: ev.generation, bySeq: {}, loaded: true } } }));
+        // Another chat was opened (reload) or a new empty one started.
+        set((st) => ({ transcripts: { ...st.transcripts, [ev.botId]: { generation: ev.generation, bySeq: {}, loaded: !ev.reload } } }));
+        if (ev.reload) s.loadRows(ev.botId).catch(console.error);
+        set((st) => ({ chatsVersion: { ...st.chatsVersion, [ev.botId]: (st.chatsVersion[ev.botId] ?? 0) + 1 } }));
+        return;
+      case 'chats':
+        set((st) => ({ chatsVersion: { ...st.chatsVersion, [ev.botId]: (st.chatsVersion[ev.botId] ?? 0) + 1 } }));
         return;
       case 'live':
         set((st) => ({ live: { ...st.live, [ev.state.botId]: ev.state } }));

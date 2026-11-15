@@ -8,7 +8,9 @@ import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { env } from './env.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
-import { computerState, readyScreen, resetBotScreen } from './computer.js';
+import { computerState, readyScreen, resetBotScreen, SCREEN_SLEEP_MIN, sleepScreen, wakeScreen } from './computer.js';
+import { isBotBusy } from './agent/loop.js';
+import { runHeartbeat } from './heartbeat.js';
 import { box } from './box.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
@@ -313,8 +315,33 @@ configApi.get('/computer/details', (c) => {
   return c.json({
     computer: computerState(userId),
     screens: leases.map((l) => ({ botId: l.bot_id, screenId: l.screen_id, lastUsedAt: l.last_used_at })),
-    hibernation: { idleMinutes: idleConfig.idleMin, viewers: viewerCount(userId), dryRun: idleConfig.dryRun },
+    hibernation: { idleMinutes: env.localScreens ? SCREEN_SLEEP_MIN : idleConfig.idleMin, viewers: viewerCount(userId), dryRun: idleConfig.dryRun, perScreen: env.localScreens },
   });
+});
+
+/** Put a bot's screen to sleep now, or wake it. */
+configApi.post('/bots/:id/screen/:action{sleep|wake}', async (c) => {
+  const user = c.get('user');
+  const b = ownBot(user.id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  try {
+    if (c.req.param('action') === 'sleep') {
+      if (isBotBusy(b.id)) return c.json({ error: `${b.name} is working right now.` }, 409);
+      await sleepScreen(b.id);
+    } else await wakeScreen(user.id, b.id);
+    return c.json({ computer: computerState(user.id) });
+  } catch (e: any) {
+    return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
+  }
+});
+
+/** Run the bot's heartbeat check-in now. */
+configApi.post('/bots/:id/heartbeat', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  if (isBotBusy(b.id)) return c.json({ error: `${b.name} is working right now; try again in a moment.` }, 409);
+  runHeartbeat(b.id);
+  return c.json({ ok: true });
 });
 
 /** Give a bot a clean screen: close what is open and bring its browser back to its home screen. Logins stay. */

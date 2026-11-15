@@ -8,7 +8,7 @@ import { env } from './env.js';
 import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { createSession, destroySession, isOwnerKey, requireUser, userFromCookieHeader, type AuthVars } from './lib/auth.js';
-import { allLive, appendRow, clearConversation, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
+import { allLive, appendRow, archiveChat, clearConversation, deleteChat, listChats, mergeChats, openChat, renameChat, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
 import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
 import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
@@ -280,7 +280,13 @@ api.patch('/bots/:id', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const p = await c.req.json();
-  const cols: Record<string, string> = { name: 'name', label: 'label', description: 'description', instructions: 'instructions', avatarShape: 'avatar_shape', avatarColor: 'avatar_color', mode: 'mode', effort: 'effort', pinned: 'pinned', voice: 'voice', voiceSpeed: 'voice_speed', voiceLanguage: 'voice_language' };
+  const cols: Record<string, string> = { name: 'name', label: 'label', description: 'description', instructions: 'instructions', avatarShape: 'avatar_shape', avatarColor: 'avatar_color', mode: 'mode', effort: 'effort', pinned: 'pinned', voice: 'voice', voiceSpeed: 'voice_speed', voiceLanguage: 'voice_language', heartbeatChecklist: 'heartbeat_checklist', heartbeatQuiet: 'heartbeat_quiet' };
+  if (p.heartbeatMin !== undefined) {
+    const m = Number(p.heartbeatMin);
+    if (!Number.isFinite(m) || (m !== 0 && m < 30)) return c.json({ error: 'A heartbeat runs every 30 minutes at most often.' }, 400);
+    db.prepare('UPDATE bots SET heartbeat_min=?, heartbeat_last_at=?, updated_at=? WHERE id=?').run(Math.min(Math.round(m), 24 * 60), now(), now(), b.id);
+  }
+  if (typeof p.heartbeatChecklist === 'string') p.heartbeatChecklist = p.heartbeatChecklist.slice(0, 4000);
   for (const [k, col] of Object.entries(cols)) {
     if (p[k] !== undefined) db.prepare(`UPDATE bots SET ${col}=?, updated_at=? WHERE id=?`).run(typeof p[k] === 'boolean' ? (p[k] ? 1 : 0) : p[k], now(), b.id);
   }
@@ -368,6 +374,56 @@ api.post('/bots/:id/fresh', (c) => {
   clearConversation(b.id);
   emitBot(b.id);
   return c.json({ ok: true });
+});
+
+// ---------- chats (each bot keeps several; one is open) ----------
+
+api.get('/bots/:id/chats', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  return c.json({ chats: listChats(b.id) });
+});
+
+/** One handler for every chat action, so a failed check answers the same way. */
+api.post('/bots/:id/chats/:gen/:action', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const gen = Number(c.req.param('gen'));
+  if (!Number.isInteger(gen) || gen < 1) return c.json({ error: 'bad chat' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    switch (c.req.param('action')) {
+      case 'open':
+        if (gen !== b.generation) interrupt(b.id); // its work would land in the other chat
+        openChat(b.id, gen);
+        break;
+      case 'rename':
+        renameChat(b.id, gen, String(body.title ?? ''));
+        break;
+      case 'archive':
+      case 'unarchive':
+        if (gen === b.generation) interrupt(b.id);
+        archiveChat(b.id, gen, c.req.param('action') === 'archive');
+        break;
+      case 'delete':
+        if (gen === b.generation) interrupt(b.id);
+        deleteChat(b.id, gen);
+        break;
+      case 'merge': {
+        const into = Number(body.into);
+        if (!Number.isInteger(into)) return c.json({ error: 'pick a chat to merge into' }, 400);
+        if (gen === b.generation || into === b.generation) interrupt(b.id);
+        mergeChats(b.id, gen, into);
+        break;
+      }
+      default:
+        return c.json({ error: 'unknown action' }, 400);
+    }
+  } catch (e: any) {
+    return c.json({ error: e?.message ?? String(e) }, 409);
+  }
+  emitBot(b.id);
+  return c.json({ ok: true, chats: listChats(b.id) });
 });
 
 api.post('/approvals/:id', async (c) => {

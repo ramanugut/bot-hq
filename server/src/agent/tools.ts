@@ -113,6 +113,99 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'read_document',
+    description: "Read a document and get its text as Markdown: PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx/.xls), CSV, HTML, EPUB, Outlook .msg, ZIP, or a web page / YouTube link. Use it for files the user attached (they are in your Library under uploads/) and for any file on your computer. Tables come back as Markdown tables.",
+    parameters: obj({ source: { type: 'string', description: 'Absolute path, a path inside your Library (e.g. uploads/contract.pdf), or an http(s) link.' } }, ['source']),
+    activity: 'reading_web',
+    label: 'Reading a document',
+    impl: async (a, ctx) => {
+      const src = String(a.source ?? '').trim();
+      if (!src) return { output: 'Give the path or link of the document.' };
+      const isUrl = /^https?:\/\//i.test(src);
+      const target = isUrl || src.startsWith('/') ? src : `${LIBRARY_ROOT}/${ctx.botId}/${src.replace(/^\.?\/+/, '')}`;
+      const r = await box.bash(`command -v markitdown >/dev/null || { echo HQ_NO_MARKITDOWN; exit 3; }; markitdown ${box.quote(target)} 2>&1`, 180);
+      if (r.output.includes('HQ_NO_MARKITDOWN')) return { output: 'Document reading is not installed on this server yet (run scripts/update.sh on the server). Try pdftotext or pandoc in the terminal meanwhile.' };
+      if (r.exit_code !== 0) return { output: `Could not read ${src}: ${r.output.trim().slice(-600)}` };
+      const text = r.output.trim();
+      if (!text) return { output: `${src} has no text in it (a scanned PDF needs OCR; say so to the user).` };
+      const LIMIT = 40_000;
+      if (text.length <= LIMIT) return { output: text, summary: `Read ${src.split('/').pop()}` };
+      // Long documents: keep the whole text in the Library and hand back the start.
+      const name = `docs/${(src.split('/').pop() ?? 'document').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]+$/, '')}.md`;
+      await box.writeFile(`${LIBRARY_ROOT}/${ctx.botId}/${name}`, text);
+      return {
+        output: `${text.slice(0, LIMIT)}\n\n[…cut here: the document is ${Math.round(text.length / 1000)}k characters. The full text is saved at ${LIBRARY_ROOT}/${ctx.botId}/${name}; read the rest from there with your file tools, or search it with grep.]`,
+        summary: `Read ${src.split('/').pop()} (long)`,
+      };
+    },
+  },
+  {
+    name: 'free_search',
+    description: "Search the web for free (no limits, private). Returns titles, links and short snippets from several search engines. Use it first for anything current: news, prices, people, companies, how-tos. Open the best links with your browser or web tools to read them in full.",
+    parameters: obj({
+      query: { type: 'string' },
+      category: { type: 'string', enum: ['general', 'news', 'images', 'videos', 'it', 'science'], description: 'Default general.' },
+      time_range: { type: 'string', enum: ['day', 'week', 'month', 'year'], description: 'Only recent results.' },
+      count: { type: 'number', description: 'How many results, 1 to 20 (default 8).' },
+    }, ['query']),
+    activity: 'searching_web',
+    label: 'Searching the web',
+    impl: async (a) => {
+      const q = String(a.query ?? '').trim();
+      if (!q) return { output: 'Say what to search for.' };
+      const url = new URL(`${process.env.HQ_SEARXNG_URL ?? 'http://127.0.0.1:8888'}/search`);
+      url.searchParams.set('q', q);
+      url.searchParams.set('format', 'json');
+      if (a.category) url.searchParams.set('categories', String(a.category));
+      if (a.time_range) url.searchParams.set('time_range', String(a.time_range));
+      let data: any;
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(20_000), headers: { accept: 'application/json' } });
+        if (!res.ok) throw new Error(`search answered ${res.status}`);
+        data = await res.json();
+      } catch (e: any) {
+        return { output: `Free web search is not available right now (${e?.message ?? e}). Use your other web search tool instead.` };
+      }
+      const n = Math.max(1, Math.min(20, Number(a.count) || 8));
+      const results = (data.results ?? []).slice(0, n).map((r: any, i: number) =>
+        `${i + 1}. ${r.title ?? '(no title)'}\n   ${r.url}${r.publishedDate ? ` · ${String(r.publishedDate).slice(0, 10)}` : ''}\n   ${String(r.content ?? '').replace(/\s+/g, ' ').slice(0, 300)}`);
+      const extra = [
+        data.answers?.length ? `Direct answer: ${data.answers.map((x: any) => (typeof x === 'string' ? x : x.answer)).join(' | ')}` : '',
+        data.infoboxes?.length ? `Info: ${String(data.infoboxes[0].content ?? '').slice(0, 500)}` : '',
+      ].filter(Boolean);
+      if (!results.length) return { output: `No results for "${q}". Try other words.${data.unresponsive_engines?.length ? ' (Some search engines did not answer; try again in a minute.)' : ''}` };
+      return { output: [...extra, ...results].join('\n'), summary: `${results.length} results for “${q.slice(0, 40)}”` };
+    },
+  },
+  {
+    name: 'set_heartbeat',
+    description: "Turn your heartbeat on or off. With a heartbeat you check in on your own every N minutes (30 at least), go through your checklist, and only message the user when something needs them. Use it when the user asks you to keep an eye on something (inbox, a website, orders, deadlines). The checklist is what you look at each time, as short lines. Nights (22:00 to 07:00 their time) are skipped unless quiet_at_night is false. Every check-in uses some of the user's ChatGPT allowance, so pick the longest interval that still works.",
+    parameters: obj({
+      minutes: { type: 'number', description: '0 turns it off; otherwise 30 or more, e.g. 60 or 120.' },
+      checklist: { type: 'string', description: 'What to check each time, one item per line. Leave out to keep the current one.' },
+      quiet_at_night: { type: 'boolean' },
+    }, ['minutes']),
+    activity: 'working',
+    label: 'Setting the heartbeat',
+    impl: async (a, ctx) => {
+      const m = Math.round(Number(a.minutes) || 0);
+      if (m !== 0 && m < 30) return { output: 'The shortest heartbeat is every 30 minutes. Ask again with 30 or more, or 0 to turn it off.' };
+      const mins = Math.min(m, 24 * 60);
+      db.prepare('UPDATE bots SET heartbeat_min=?, updated_at=? WHERE id=?').run(mins, now(), ctx.botId);
+      if (typeof a.checklist === 'string') db.prepare('UPDATE bots SET heartbeat_checklist=? WHERE id=?').run(a.checklist.slice(0, 4000), ctx.botId);
+      if (typeof a.quiet_at_night === 'boolean') db.prepare('UPDATE bots SET heartbeat_quiet=? WHERE id=?').run(a.quiet_at_night ? 1 : 0, ctx.botId);
+      // Start counting from now, so the first check-in is one interval away.
+      if (mins) db.prepare('UPDATE bots SET heartbeat_last_at=? WHERE id=?').run(now(), ctx.botId);
+      const r = getBotRow(ctx.botId);
+      hub.emit(ctx.userId, { type: 'bot', bot: (await import('../store.js')).toBot(r) });
+      const every = mins >= 60 && mins % 60 === 0 ? `${mins / 60} hour${mins === 60 ? '' : 's'}` : `${mins} minutes`;
+      return {
+        output: mins ? `Heartbeat on: every ${every}${r.heartbeat_quiet ? ', not at night' : ''}. Checklist:\n${r.heartbeat_checklist || '(empty: add one so you know what to check)'}` : 'Heartbeat off.',
+        summary: mins ? `Heartbeat every ${every}` : 'Heartbeat off',
+      };
+    },
+  },
+  {
     name: 'show_image',
     description: "Show an image in the chat (PNG, JPG, WEBP or GIF). Give the path of an image you made, e.g. one from your image generation tool; it is copied into your Library and appears in the conversation. Call it every time you make an image for the user.",
     parameters: obj({ path: { type: 'string', description: 'Absolute path of the image file on your computer' }, caption: { type: 'string' } }, ['path']),

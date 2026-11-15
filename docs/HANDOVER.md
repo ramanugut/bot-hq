@@ -32,6 +32,8 @@ Fork of nickvasilescu/bot-hq, changed to run **without Orgo or any paid key**. B
 | Logs | `/var/log/hq/app.log`, `/var/log/hq/hermes.log` |
 | Backups (nightly 02:30 UTC, keep 3) | `/opt/hq/backups/` |
 | Node | `/opt/hq/node/bin` |
+| Document reader (MarkItDown venv) | `/opt/hq/markitdown`, `/usr/local/bin/markitdown` |
+| Free web search (SearXNG, Docker container `searxng`) | `127.0.0.1:8888`, settings in `/opt/hq/searxng/settings.yml` |
 
 Processes (supervisor): `hq-app` (the web app, port 8787) and `hq-hermes` (`hermes gateway`, API on 127.0.0.1:8642).
 Caddy serves HTTPS in front of 8787.
@@ -45,13 +47,30 @@ tail -50 /var/log/hq/app.log; tail -50 /var/log/hq/hermes.log
 bash /opt/hq/app/scripts/set-password.sh EMAIL     # set/reset the sign-in password
 bash /opt/hq/app/scripts/backup.sh                 # backup now
 bash /opt/hq/app/scripts/add-mcp.sh NAME URL       # give bots an MCP server's tools
+bash /opt/hq/app/scripts/extras.sh                 # (re)install MarkItDown + SearXNG; update.sh runs it too
+docker logs searxng | tail                         # free search not answering?
 hermes model                                       # change provider/model (interactive)
 ```
 
 ## Fresh install
 See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes model`, run the script, set password).
 
+## Features added in Phase 1 (Nov 2026)
+- **Chats per bot**: each "generation" of `rows` is a chat; table `chats` holds title, archived, and a one-time
+  `note` handed to the bot on its next turn (merged chat content, or what a heartbeat posted). Routes
+  `GET /api/bots/:id/chats`, `POST /api/bots/:id/chats/:gen/{open|rename|archive|unarchive|delete|merge}`.
+  UI: `web/src/components/ChatsPanel.tsx` (Chats button in the chat header; clicking the open bot again).
+  Hermes keeps one conversation per chat (`hq-<bot>-g<gen>`), so reopening an old chat keeps its context.
+- **Heartbeat** (`server/src/heartbeat.ts`): bots with `heartbeat_min` ≥ 30 check their checklist; replying
+  `HEARTBEAT_OK` (or stay_silent) removes the check-in's rows from the chat. Quiet 22:00–07:00 user time by default.
+  Uses its own daily Hermes thread (`hq-<bot>-hb-<date>`). Tool `set_heartbeat`; settings in Bot settings → General.
+- **read_document** tool (MarkItDown) and **free_search** tool (SearXNG). Both in `server/src/agent/tools.ts`.
+- **Screens sleep** after `HQ_SCREEN_SLEEP_MIN` (15) idle minutes: the bot's Chrome and desk apps stop
+  (`screens.asleep=1`), Xvfb stays. `screenForWork` (every turn) and opening the screen wake it. Settings →
+  Computer has Sleep/Wake per screen.
+
 ## Things learned the hard way
+- `update.sh` runs inside one function so the `git reset` that rewrites it mid-run can't break it.
 - Main bot needs `browser.cdp_url: http://127.0.0.1:9299` and `computer_use` in `platform_toolsets.api_server`
   in `/root/.hermes/config.yaml`, plus `hermes computer-use install` and `at-spi2-core`. Without it the bot uses a
   hidden browser and claims success while the Live screen shows nothing.

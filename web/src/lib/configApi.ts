@@ -32,7 +32,7 @@ export interface ComputerDetails {
   hibernation: { idleMinutes: number; viewers: number; dryRun: boolean };
 }
 
-export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode'>>;
+export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode' | 'heartbeatMin' | 'heartbeatChecklist' | 'heartbeatQuiet'>>;
 
 export const configApi = {
   settings: (botId: string) => req<BotSettingsBundle>('GET', `/bots/${botId}/settings`),

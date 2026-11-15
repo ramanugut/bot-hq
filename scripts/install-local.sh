@@ -198,6 +198,9 @@ systemctl enable hq-address.service >/dev/null 2>&1
 printf '30 2 * * * root /bin/bash %s/scripts/backup.sh >/var/log/hq/backup.log 2>&1\n' "$APP" > /etc/cron.d/hq-backup
 chmod 644 /etc/cron.d/hq-backup
 
+echo "Installing free extras (document reading, free web search)..."
+bash "$APP/scripts/extras.sh" || true
+
 echo
 echo "Done. Open: $PUBLIC_URL"
 echo "(If it doesn't load, open ports 80 and 443 in the server's AWS security group.)"

@@ -1,4 +1,4 @@
-import type { Bot, ComputerState, LiveState, Routine, Row, Toolkit, User } from '@shared/types';
+import type { Bot, ChatInfo, ComputerState, LiveState, Routine, Row, Toolkit, User } from '@shared/types';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -50,6 +50,11 @@ export const api = {
   send: (id: string, text: string) => req<{ row: Row }>('POST', `/bots/${id}/messages`, { text }),
   interrupt: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/interrupt`),
   fresh: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/fresh`),
+  chats: (id: string) => req<{ chats: ChatInfo[] }>('GET', `/bots/${id}/chats`),
+  chatAction: (id: string, gen: number, action: 'open' | 'rename' | 'archive' | 'unarchive' | 'delete' | 'merge', body?: { title?: string; into?: number }) =>
+    req<{ ok: true; chats: ChatInfo[] }>('POST', `/bots/${id}/chats/${gen}/${action}`, body ?? {}),
+  heartbeatNow: (id: string) => req<{ ok: true }>('POST', `/bots/${id}/heartbeat`),
+  screenPower: (id: string, action: 'sleep' | 'wake') => req<{ computer: ComputerState }>('POST', `/bots/${id}/screen/${action}`),
 
   approve: (approvalId: string, decision: 'allow' | 'always' | 'deny') => req<{ ok: true }>('POST', `/approvals/${approvalId}`, { decision }),
   answer: (id: string, seq: number, answer: string) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/answer`, { answer }),

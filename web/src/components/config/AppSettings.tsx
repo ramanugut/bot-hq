@@ -5,6 +5,7 @@ import { BotAvatarFor } from '../../avatar/BotAvatar';
 import { configApi, type ComputerDetails } from '../../lib/configApi';
 import { relativeShort } from '../../lib/time';
 import { useConfigUI, type AppSection, type Theme } from '../../configStore';
+import { api } from '../../lib/api';
 import { useStore } from '../../store';
 import { computerStatusText } from '../DetailsPanel';
 import { Icon } from '../Icon';
@@ -135,7 +136,7 @@ function ComputerSection() {
             <div className="cfg-row__text">
               <div className="cfg-row__title">Bots’ computer · {computerStatusText(computer ?? null)}</div>
               <div className="cfg-row__sub">
-                {details ? `Goes to sleep after ${details.hibernation.idleMinutes} idle minutes when nobody is watching. Starts again on its own once a Bot has work.` : 'Checking…'}
+                {details ? `Each Bot’s screen goes to sleep after ${details.hibernation.idleMinutes} idle minutes when nobody is watching, which frees memory. It wakes on its own as soon as the Bot has work. Logins stay.` : 'Checking…'}
               </div>
             </div>
             {running || status === 'suspending' ? (
@@ -161,8 +162,13 @@ function ComputerSection() {
                 {bot ? <BotAvatarFor bot={bot} size={28} /> : <span className="cfg-row__ph" />}
                 <div className="cfg-row__text">
                   <div className="cfg-row__title">{bot?.name ?? 'Removed Bot'}</div>
-                  <div className="cfg-row__sub">{screenLabel(s.screenId)} · used {relativeShort(s.lastUsedAt) === 'now' ? 'just now' : `${relativeShort(s.lastUsedAt)}${/^\d/.test(relativeShort(s.lastUsedAt)) ? ' ago' : ''}`}</div>
+                  <div className="cfg-row__sub">{screenLabel(s.screenId)} · {computer?.screens.find((x) => x.botId === s.botId)?.asleep ? 'asleep · ' : ''}used {relativeShort(s.lastUsedAt) === 'now' ? 'just now' : `${relativeShort(s.lastUsedAt)}${/^\d/.test(relativeShort(s.lastUsedAt)) ? ' ago' : ''}`}</div>
                 </div>
+                {computer?.screens.find((x) => x.botId === s.botId)?.asleep ? (
+                  <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => api.screenPower(s.botId, 'wake').then(() => { setNote(null); load(); }).catch((e) => setNote(e.message))}>Wake</button>
+                ) : (
+                  <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => api.screenPower(s.botId, 'sleep').then(() => { setNote(null); load(); }).catch((e) => setNote(e.message))}>Sleep</button>
+                )}
                 <ConfirmButton
                   className="cfg-btn cfg-btn--secondary"
                   confirmLabel="Reset screen"
