@@ -1,0 +1,367 @@
+diff --git a/scripts/install-local.sh b/scripts/install-local.sh
+index e627278..f93d49b 100644
+--- a/scripts/install-local.sh
++++ b/scripts/install-local.sh
+@@ -55,6 +55,26 @@ setenv API_SERVER_ENABLED true
+ setenv API_SERVER_HOST 127.0.0.1
+ setenv API_SERVER_PORT 8642
+ grep -q '^API_SERVER_KEY=.\+' "$HERMES_HOME_DIR/.env" || setenv API_SERVER_KEY "$(openssl rand -hex 24)"
++# The main bot works on the default screen (:99): its browser tool drives the Chrome we run there
++# (DevTools port 9299), and its computer-use tool acts on that display.
++setenv BROWSER_CDP_URL http://127.0.0.1:9299
++apt-get install -y -qq at-spi2-core >/dev/null 2>&1 || true
++"$HERMES_BIN" computer-use install >/var/log/hq/cua.log 2>&1 || echo "note: computer-use driver did not install (see /var/log/hq/cua.log); the browser tool still works"
++touch "$HERMES_HOME_DIR/config.yaml"
++python3 - "$HERMES_HOME_DIR/config.yaml" <<'PY'
++import shutil, sys, time, yaml
++p = sys.argv[1]
++c = yaml.safe_load(open(p)) or {}
++c.setdefault('browser', {})['cdp_url'] = 'http://127.0.0.1:9299'
++pt = c.setdefault('platform_toolsets', {})
++cur = list(pt.get('api_server') or ['hermes-api-server'])
++for t in ('hermes-api-server', 'computer_use'):
++    if t not in cur:
++        cur.append(t)
++pt['api_server'] = cur
++shutil.copy2(p, f'{p}.before-hq-{int(time.time())}')
++yaml.safe_dump(c, open(p, 'w'), sort_keys=False)
++PY
+ cat > /etc/supervisor/conf.d/hq-hermes.conf <<EOF
+ [program:hq-hermes]
+ command=$HERMES_BIN gateway
+diff --git a/scripts/set-password.sh b/scripts/set-password.sh
+new file mode 100644
+index 0000000..1a732b3
+--- /dev/null
++++ b/scripts/set-password.sh
+@@ -0,0 +1,14 @@
++#!/usr/bin/env bash
++# Set (or reset) the sign-in password for an account, on the server itself, as root:
++#   bash set-password.sh you@example.com
++# It asks for the password without showing it. Then sign in on any device with that email and password.
++set -euo pipefail
++email="${1:?usage: set-password.sh <email>}"
++ENV_FILE="${ENV_FILE:-/opt/hq/app/.env}"
++val() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2-; }
++read -rsp "New password (8+ characters): " pw; echo
++read -rsp "Same password again: " pw2; echo
++[ "$pw" = "$pw2" ] || { echo "The two passwords are not the same."; exit 1; }
++key="$(printf 'owner-login' | openssl dgst -sha256 -hmac "$(val SESSION_SECRET)" -r | cut -d' ' -f1)"
++body="$(EMAIL="$email" PW="$pw" python3 -c 'import json,os;print(json.dumps({"email":os.environ["EMAIL"],"password":os.environ["PW"]}))')"
++curl -fsS -X POST "http://127.0.0.1:$(val PORT)/api/auth/owner" -H "authorization: Bearer $key" -H 'content-type: application/json' --data-binary @- <<<"$body" && echo
+diff --git a/server/src/agent/prompt.ts b/server/src/agent/prompt.ts
+index 4a730a9..929da8f 100644
+--- a/server/src/agent/prompt.ts
++++ b/server/src/agent/prompt.ts
+@@ -1,6 +1,7 @@
+ import { db } from '../db.js';
+ import { getBotRow, listRoutines } from '../store.js';
+-import { connectedToolkits } from '../composio.js';
++import { connectedToolkits, hasComposio } from '../composio.js';
++import { env } from '../env.js';
+ import { LIBRARY_ROOT } from './tools.js';
+ 
+ /**
+@@ -35,9 +36,11 @@ ${who}
+ 
+ ## The app's tools
+ The app gives you extra tools through its MCP server "hq"; their names carry that prefix (save_file appears as mcp_hq_save_file or mcp__hq__save_file).
+-- Connected apps (Gmail, Calendar, Slack, GitHub, Notion and many more): find the right action with COMPOSIO_SEARCH_TOOLS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. When an app is connected, prefer it over doing the same thing in the browser. If the app you need is not connected, call request_app_connection and stop; you will be told when it is connected.
++${hasComposio ? `- Connected apps (Gmail, Calendar, Slack, GitHub, Notion and many more): find the right action with COMPOSIO_SEARCH_TOOLS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. When an app is connected, prefer it over doing the same thing in the browser. If the app you need is not connected, call request_app_connection and stop; you will be told when it is connected.
+ - Some actions in connected apps wait for ${owner} to approve them. The tool call simply takes longer and then returns. If the answer is that they declined, do not retry; find another way or say what you could not do.
+-- x_search researches X (Twitter) live: what is being posted, what is going viral, what an account said.
++` : `- Connected apps are switched off on this install: never call request_app_connection. For Gmail, Facebook, Instagram, TikTok and every other site, use the browser on your own screen. ${owner} signs in there for you; never ask for passwords or codes in chat. If a site needs a login you don't have, ask ${owner} to sign in on your screen (they open it in the app and take control), then carry on.
++`}${env.xaiKey ? `- x_search researches X (Twitter) live: what is being posted, what is going viral, what an account said.
++` : ''}- create_bot adds a new agent to the team when ${owner} asks for one; it shows them a Yes/No card first.
+ - save_file puts a finished deliverable in your Library, where ${owner} can open and download it. Anything you write under ${LIBRARY_ROOT}/${botId}/ shows up there too.
+ - ask_user asks a multiple-choice question when you need a real decision. After calling it, stop; the answer arrives as the next message.
+ - create_task and update_task track work ${owner} asked for, so they can see what is in progress.
+@@ -46,7 +49,7 @@ The app gives you extra tools through its MCP server "hq"; their names carry tha
+ - stay_silent ends a turn without telling ${owner} anything. Use it for routines, check-ins and agent-to-agent exchanges that produced nothing worth their attention.
+ 
+ ## Your computer
+-You have your own screen on a Linux computer shared by the team: a desktop with your own browser. ${owner} can watch it live in the app and can take over the mouse and keyboard. Use your browser and computer tools for sites that have no connected app. Stay on your own screen.
++You have your own screen on a Linux computer shared by the team: a desktop with your own browser. ${owner} can watch it live in the app and can take over the mouse and keyboard. Use your browser and computer tools for websites${hasComposio ? ' that have no connected app' : ''}. Stay on your own screen.
+ 
+ ## Style
+ - Write like a sharp colleague texting: short, warm, direct. No headings for simple replies. Lists or tables only when they help.
+diff --git a/server/src/agent/tools.ts b/server/src/agent/tools.ts
+index f24d62e..3ee11f3 100644
+--- a/server/src/agent/tools.ts
++++ b/server/src/agent/tools.ts
+@@ -300,6 +300,34 @@ export const TOOLS: ToolDef[] = [
+       return { output: out, summary: `Posted to ${a.group_name}`, endTurn: out === 'Posted to the group.' };
+     },
+   },
++  {
++    name: 'create_bot',
++    description: "Create a new Bot on the user's team (it gets its own screen and browser). Only when the user asks for a new bot. First call it without confirmed: that shows the user a Yes/No card and ends your turn. Call it again with confirmed=true only after the user answered Yes.",
++    parameters: obj({
++      name: { type: 'string', description: 'Short first name, e.g. Mia' },
++      job: { type: 'string', description: 'One-line role, e.g. Social media manager' },
++      instructions: { type: 'string', description: 'How this bot should work, in the user\'s words where possible' },
++      confirmed: { type: 'boolean', description: 'true only after the user said Yes on the card' },
++    }, ['name', 'job', 'instructions', 'confirmed']),
++    activity: 'working',
++    label: 'Setting up a new Bot',
++    impl: async (a, ctx) => {
++      const name = String(a.name ?? '').trim().slice(0, 60);
++      if (!name) return { output: 'A bot needs a name.' };
++      if (botByName(ctx.userId, name)) return { output: `There is already a bot called ${name}. Pick another name.` };
++      if (a.confirmed !== true) {
++        appendRow(ctx.botId, 'card', { type: 'card', card: 'question', question: `Create a new bot "${name}" (${String(a.job ?? '').slice(0, 80)})?`, options: ['Yes, create it', 'No'], status: 'pending' });
++        return { output: 'Asked the user to confirm. Stop here; if they answer Yes, call create_bot again with the same details and confirmed=true.', endTurn: true };
++      }
++      try {
++        const { createBot } = await import('../routes.js');
++        const b = createBot(ctx.userId, { name, label: String(a.job ?? '').slice(0, 60), description: String(a.job ?? ''), instructions: String(a.instructions ?? '') });
++        return { output: `Created ${b.name}. It is starting its own agent and screen; you can message it with send_to_bot in a minute.`, summary: `Created ${b.name}` };
++      } catch (e: any) {
++        return { output: `Could not create the bot: ${e?.message ?? e}` };
++      }
++    },
++  },
+   {
+     name: 'ask_user',
+     description: 'Ask the user a multiple-choice question when you need a decision before continuing. Ends your turn; their answer arrives as their next message.',
+diff --git a/server/src/db.ts b/server/src/db.ts
+index 7c32cec..c635e56 100644
+--- a/server/src/db.ts
++++ b/server/src/db.ts
+@@ -143,6 +143,7 @@ function addColumn(table: string, col: string, ddl: string) {
+   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+   if (!cols.some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
+ }
++addColumn('users', 'password_hash', 'TEXT');
+ addColumn('bots', 'voice', "TEXT NOT NULL DEFAULT 'luna'");
+ addColumn('bots', 'voice_speed', 'REAL NOT NULL DEFAULT 1');
+ addColumn('bots', 'voice_language', "TEXT NOT NULL DEFAULT 'auto'");
+diff --git a/server/src/lib/password.ts b/server/src/lib/password.ts
+new file mode 100644
+index 0000000..3bb0930
+--- /dev/null
++++ b/server/src/lib/password.ts
+@@ -0,0 +1,27 @@
++import crypto from 'node:crypto';
++
++/** Passwords are stored as scrypt hashes: "scrypt$<salt b64>$<hash b64>". */
++export function hashPassword(pw: string): string {
++  const salt = crypto.randomBytes(16);
++  const hash = crypto.scryptSync(pw, salt, 64);
++  return `scrypt$${salt.toString('base64')}$${hash.toString('base64')}`;
++}
++
++export function checkPassword(pw: string, stored: string | null | undefined): boolean {
++  const [kind, salt, hash] = (stored ?? '').split('$');
++  if (kind !== 'scrypt' || !salt || !hash) return false;
++  const want = Buffer.from(hash, 'base64');
++  const got = crypto.scryptSync(pw, Buffer.from(salt, 'base64'), want.length);
++  return crypto.timingSafeEqual(got, want);
++}
++
++/** At most `max` failed tries per key in `windowMs`. */
++const fails = new Map<string, number[]>();
++export function tooManyTries(key: string, max = 10, windowMs = 15 * 60_000): boolean {
++  const recent = (fails.get(key) ?? []).filter((t) => Date.now() - t < windowMs);
++  fails.set(key, recent);
++  return recent.length >= max;
++}
++export function noteFailure(key: string) {
++  fails.set(key, [...(fails.get(key) ?? []), Date.now()]);
++}
+diff --git a/server/src/routes.ts b/server/src/routes.ts
+index 7e4bf00..06236b7 100644
+--- a/server/src/routes.ts
++++ b/server/src/routes.ts
+@@ -12,12 +12,13 @@ import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComp
+ import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
+ import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
+ import { orgo } from './orgo.js';
+-import { catalog, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
++import { hasComposio, catalog, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
+ import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
+ import { deleteEventTrigger } from './triggers.js';
+ import { dispatchRoomMessage } from './agent/rooms.js';
+ import { voiceApi } from './voice.js';
+ import type { AvatarColor, AvatarShape, Toolkit } from './types.js';
++import { checkPassword, hashPassword, noteFailure, tooManyTries } from './lib/password.js';
+ 
+ export const api = new Hono<AuthVars>();
+ 
+@@ -31,11 +32,11 @@ function hashPick<T>(id: string, list: T[]): T {
+ }
+ 
+ /** Thrown for things the user can fix; the message is shown to them. */
+-class UserError extends Error {}
++export class UserError extends Error {}
+ 
+ const agentCount = () => (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as any).n as number;
+ 
+-function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean }) {
++export function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean }) {
+   // Every bot needs a screen of its own on the one shared computer.
+   if (agentCount() >= env.maxBots) throw new UserError(`The team is full: the computer has room for ${env.maxBots} bots. Remove one to add another.`);
+   const id = newId('bot');
+@@ -64,7 +65,51 @@ function findOrCreateUser(email: string, name?: string, preferId?: string) {
+ 
+ api.get('/auth/me', (c) => {
+   const user = userFromCookieHeader(c.req.header('cookie'));
+-  return c.json({ user, devLogin: env.devLogin });
++  return c.json({ user, devLogin: env.devLogin, googleLogin: hasComposio, passwordLogin: true });
++});
++
++// ---------- email + password ----------
++
++const clientIp = (c: any) => (c.req.header('x-forwarded-for') ?? '').split(',')[0].trim() || 'local';
++
++api.post('/auth/password', async (c) => {
++  const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({} as any));
++  const ip = clientIp(c);
++  if (tooManyTries(ip)) return c.json({ error: 'Too many tries. Wait 15 minutes and try again.' }, 429);
++  const u = email ? (db.prepare('SELECT id, password_hash FROM users WHERE lower(email)=lower(?)').get(String(email).trim()) as any) : null;
++  if (!u || !password || !checkPassword(String(password), u.password_hash)) {
++    noteFailure(ip);
++    return c.json({ error: 'Wrong email or password.' }, 401);
++  }
++  createSession(c, u.id);
++  return c.json({ ok: true });
++});
++
++const esc = (t: string) => t.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
++const page = (body: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Password</title>
++<style>body{font-family:system-ui,sans-serif;background:#111;color:#eee;display:flex;justify-content:center;padding:48px 16px}main{max-width:360px;width:100%}input,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #333;background:#1b1b1b;color:#eee;font-size:16px}button{background:#eee;color:#111;font-weight:600;cursor:pointer}a{color:#9cf}.err{color:#f88}</style></head><body><main>${body}</main></body></html>`;
++
++// Set or change the password of the signed-in user (open it in a browser that is already signed in).
++api.get('/auth/set-password', (c) => {
++  const user = userFromCookieHeader(c.req.header('cookie'));
++  if (!user) return c.html(page('<h2>Sign in first</h2><p>Open this page in a browser that is already signed in.</p>'), 401);
++  return c.html(page(`<h2>Password for ${esc(user.email)}</h2><p>Use it with your email to sign in on any device.</p>
++<form method="post"><input type="password" name="password" placeholder="New password (8+ characters)" minlength="8" required autocomplete="new-password">
++<input type="password" name="confirm" placeholder="Same password again" minlength="8" required autocomplete="new-password"><button>Save password</button></form>`));
++});
++
++api.post('/auth/set-password', async (c) => {
++  const user = userFromCookieHeader(c.req.header('cookie'));
++  if (!user) return c.html(page('<h2>Sign in first</h2>'), 401);
++  // Only from our own page: a form on another site must not be able to set the password.
++  const origin = c.req.header('origin');
++  if (origin && origin !== new URL(env.appUrl).origin) return c.html(page('<p class="err">Refused.</p>'), 403);
++  const f = await c.req.parseBody();
++  const pw = String(f.password ?? '');
++  if (pw.length < 8) return c.html(page('<p class="err">Use at least 8 characters.</p><a href="">Try again</a>'), 400);
++  if (pw !== String(f.confirm ?? '')) return c.html(page('<p class="err">The two passwords are not the same.</p><a href="">Try again</a>'), 400);
++  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(pw), user.id);
++  return c.html(page(`<h2>Saved</h2><p>Sign in on any device with <b>${esc(user.email)}</b> and this password.</p><a href="/">Back to the app</a>`));
+ });
+ 
+ api.get('/auth/google/start', async (c) => {
+@@ -115,10 +160,15 @@ const signInLinks = new Map<string, { userId: string; expires: number }>();
+ // With `link`, it answers with a link that signs one browser in, once (scripts/sign-in-link.sh).
+ api.post('/auth/owner', async (c) => {
+   if (!isOwnerKey((c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, ''))) return c.json({ error: 'forbidden' }, 403);
+-  const { email, name, link } = await c.req.json<{ email: string; name?: string; link?: boolean }>();
++  const { email, name, link, password } = await c.req.json<{ email: string; name?: string; link?: boolean; password?: string }>();
+   if (!email?.includes('@')) return c.json({ error: 'email required' }, 400);
+   try {
+     const { id } = findOrCreateUser(email, name);
++    if (typeof password === 'string') {
++      if (password.length < 8) return c.json({ error: 'Use at least 8 characters.' }, 400);
++      db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(password), id);
++      return c.json({ ok: true, password: 'set' });
++    }
+     if (link) {
+       const token = crypto.randomBytes(24).toString('base64url');
+       signInLinks.set(token, { userId: id, expires: Date.now() + 15 * 60_000 });
+diff --git a/web/src/components/SignIn.tsx b/web/src/components/SignIn.tsx
+index a088898..1a96e49 100644
+--- a/web/src/components/SignIn.tsx
++++ b/web/src/components/SignIn.tsx
+@@ -6,6 +6,8 @@ import { TrafficLights } from './Sidebar';
+ 
+ export function SignIn() {
+   const devLogin = useStore((s) => s.devLogin);
++  const googleLogin = useStore((s) => s.googleLogin);
++  const [password, setPassword] = useState('');
+   const checkAuth = useStore((s) => s.checkAuth);
+   const [email, setEmail] = useState('');
+   const [name, setName] = useState('');
+@@ -19,6 +21,14 @@ export function SignIn() {
+     try { await api.devLogin(email.trim(), name.trim() || undefined); await checkAuth(); } catch (err) { setError((err as Error).message); setBusy(false); }
+   };
+ 
++  const signIn = async (e: React.FormEvent) => {
++    e.preventDefault();
++    if (!email.includes('@')) { setError('Enter your email address'); return; }
++    if (!password) { setError('Enter your password'); return; }
++    setBusy(true); setError(null);
++    try { await api.passwordLogin(email.trim(), password); await checkAuth(); } catch (err) { setError((err as Error).message); setBusy(false); }
++  };
++
+   return (
+     <div className="signin">
+       <div className="signin__chrome"><TrafficLights /></div>
+@@ -28,9 +38,16 @@ export function SignIn() {
+         </div>
+         <h1 className="signin__title">Grokbot</h1>
+         <p className="signin__sub">AI teammates with their own computers. Hand them a task and they get it done.</p>
+-        <a className="btn btn--primary signin__google" href="/api/auth/google/start">
+-          <GoogleG /> Sign in with Google
+-        </a>
++        <form className="signin__dev" onSubmit={signIn}>
++          <input className="text-input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" autoComplete="username" />
++          <input className="text-input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" autoComplete="current-password" />
++          <button type="submit" className="btn btn--primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
++        </form>
++        {googleLogin && (
++          <a className="btn btn--secondary signin__google" href="/api/auth/google/start">
++            <GoogleG /> Sign in with Google
++          </a>
++        )}
+         {devLogin && (
+           <form className="signin__dev" onSubmit={dev}>
+             <div className="signin__divider"><span>Dev sign-in</span></div>
+diff --git a/web/src/lib/api.ts b/web/src/lib/api.ts
+index 071e2ab..0d670ed 100644
+--- a/web/src/lib/api.ts
++++ b/web/src/lib/api.ts
+@@ -25,7 +25,8 @@ export interface AppsResponse { apps: Toolkit[]; connected: string[]; categories
+ export interface RoomMember { id: string; name: string; label: string; avatarShape: string; avatarColor: string }
+ 
+ export const api = {
+-  me: () => req<{ user: User | null; devLogin: boolean }>('GET', '/auth/me'),
++  me: () => req<{ user: User | null; devLogin: boolean; googleLogin?: boolean }>('GET', '/auth/me'),
++  passwordLogin: (email: string, password: string) => req<{ ok: true }>('POST', '/auth/password', { email, password }),
+   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
+   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
+ 
+diff --git a/web/src/store.ts b/web/src/store.ts
+index 9e155e2..5adbadf 100644
+--- a/web/src/store.ts
++++ b/web/src/store.ts
+@@ -9,6 +9,7 @@ interface Transcript { generation: number; bySeq: Record<number, Row>; loaded: b
+ interface State {
+   user: User | null;
+   devLogin: boolean;
++  googleLogin: boolean;
+   authChecked: boolean;
+ 
+   bots: Bot[];
+@@ -51,6 +52,7 @@ const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } ca
+ export const useStore = create<State>((set, get) => ({
+   user: null,
+   devLogin: false,
++  googleLogin: false,
+   authChecked: false,
+   bots: [],
+   live: {},
+@@ -69,8 +71,8 @@ export const useStore = create<State>((set, get) => ({
+ 
+   async checkAuth() {
+     try {
+-      const { user, devLogin } = await api.me();
+-      set({ user, devLogin, authChecked: true });
++      const { user, devLogin, googleLogin } = await api.me();
++      set({ user, devLogin, googleLogin: !!googleLogin, authChecked: true });
+     } catch {
+       set({ user: null, authChecked: true });
+     }
