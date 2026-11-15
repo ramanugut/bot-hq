@@ -215,15 +215,25 @@ api.post('/push/unsubscribe', async (c) => {
 });
 api.post('/push/test', async (c) => { await notify(c.get('user').id, { title: 'Botly', body: 'Notifications are working.', tag: 'test' }, true); return c.json({ ok: true }); });
 // The app window is visible: hold back notifications for things the user can already see.
-// Backups made by scripts/backup.sh (nightly). The newest one can be downloaded from the app.
-api.get('/backups/latest', (c) => {
+// Backups contain authentication files. A signed-in session alone cannot authorize download.
+api.post('/backups/latest', async (c) => {
+  const user = c.get('user');
+  if (!env.ownerEmail || user.email.toLowerCase() !== env.ownerEmail) return c.json({ error: 'Owner access required.' }, 403);
+  const attemptKey = `backup:${user.id}`;
+  if (tooManyTries(attemptKey, 5)) return c.json({ error: 'Too many attempts. Try again later.' }, 429);
+  const payload = await c.req.json<{ password?: string }>().catch(() => ({}));
+  const record = db.prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as { password_hash: string | null } | undefined;
+  if (!payload.password || !checkPassword(String(payload.password), record?.password_hash)) {
+    noteFailure(attemptKey);
+    return c.json({ error: 'Confirm your account password before downloading. Set a password in account settings if needed.' }, 403);
+  }
   const dir = '/opt/hq/backups';
   let files: string[] = [];
   try { files = fs.readdirSync(dir).filter((f) => /^bothq-\d{8}-\d{4}\.tar\.gz$/.test(f)).sort(); } catch { /* none yet */ }
   const f = files.pop();
   if (!f) return c.text('No backup yet. The first one is made tonight, or run: bash /opt/hq/app/scripts/backup.sh', 404);
   const full = `${dir}/${f}`;
-  return new Response(Readable.toWeb(fs.createReadStream(full)) as ReadableStream, { headers: { 'content-type': 'application/gzip', 'content-length': String(fs.statSync(full).size), 'content-disposition': `attachment; filename="${f}"` } });
+  return new Response(Readable.toWeb(fs.createReadStream(full)) as ReadableStream, { headers: { 'content-type': 'application/gzip', 'content-length': String(fs.statSync(full).size), 'content-disposition': `attachment; filename="${f}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
 });
 api.get('/usage', async (c) => c.json({ usage: await chatgptUsage() }));
 api.post('/presence', (c) => { markPresent(c.get('user').id); return c.json({ ok: true }); });

@@ -77,4 +77,6 @@ export const env = {
   agentApprovals: process.env.HQ_AGENT_APPROVALS ?? (localScreens ? 'off' : ''),
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
+  /** Server-owner actions are disabled when no owner can be identified. */
+  ownerEmail: (process.env.BOTLY_OWNER_EMAIL ?? (process.env.ALLOWED_EMAILS ?? '').split(',')[0] ?? '').trim().toLowerCase(),
 };

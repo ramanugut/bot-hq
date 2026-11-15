@@ -78,6 +78,26 @@ export function Sidebar() {
   const setModal = useStore((s) => s.setModal);
   const [accountMenu, setAccountMenu] = useState(false);
   const logout = async () => { await api.logout().catch(() => {}); location.reload(); };
+  const downloadBackup = async () => {
+    const password = window.prompt('This backup contains account sign-ins. Confirm your Botly password to download it:');
+    if (!password) return;
+    try {
+      const res = await fetch('/api/backups/latest', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      if (!res.ok) {
+        const error = await res.text();
+        let message = error;
+        try { message = (JSON.parse(error) as { error?: string }).error ?? error; } catch { /* plain text */ }
+        throw new Error(message);
+      }
+      const blob = await res.blob();
+      const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'botly-backup.tar.gz';
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a'); link.href = url; link.download = name;
+      document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      alertNote('Backup downloaded. Keep this sensitive archive secure.');
+    } catch (e: any) { alertNote(`Backup failed: ${e?.message ?? e}`); }
+  };
 
   const primary = bots.find((b) => b.isPrimary);
   const others = bots.filter((b) => !b.isPrimary).sort((a, b) => b.lastActivityAt - a.lastActivityAt);
@@ -155,7 +175,7 @@ export function Sidebar() {
                 items={[
                   { label: 'Settings', hint: '⌘,', onSelect: () => useConfigUI.getState().openAppSettings() },
                   { label: notifOn ? 'Notifications: on' : 'Turn on notifications', onSelect: () => { (notifOn ? disablePush() : enablePush()).then((m) => { alertNote(m); void pushEnabled().then(setNotifOn); }).catch((e) => alertNote(String(e?.message ?? e))); } },
-                  { label: 'Download backup', onSelect: () => { window.location.href = '/api/backups/latest'; } },
+                  { label: 'Download backup', onSelect: () => { void downloadBackup(); } },
                   { label: `Appearance: ${THEME_LABEL[theme]}`, onSelect: () => useConfigUI.getState().setTheme(NEXT_THEME[theme]) },
                   ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
                   { label: 'Log out', danger: true, onSelect: logout },

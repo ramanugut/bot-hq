@@ -13,6 +13,7 @@ import { createRoom, postToRoom } from './rooms.js';
 import type { ActivityKind } from '../types.js';
 import { Cron } from 'croner';
 import fs from 'node:fs';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
 
 /** Bots with a video rendering right now (one at a time each). */
@@ -131,6 +132,18 @@ async function xSearch(a: any): Promise<string> {
 /** Where each bot's Library lives on the shared computer. */
 export const LIBRARY_ROOT = '/root/grokbot/files';
 
+/** Resolve a source only inside the calling bot's Library; symlink escapes are denied. */
+export function libraryReadPath(botId: string, requested: string): string {
+  const root = fs.realpathSync(path.join(LIBRARY_ROOT, botId));
+  const full = fs.realpathSync(path.isAbsolute(requested) ? requested : path.join(root, requested));
+  const rel = path.relative(root, full);
+  if (!rel || rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
+    throw new Error('Only files in your own Library may be read.');
+  }
+  if (!fs.statSync(full).isFile()) throw new Error('The source is not a file.');
+  return full;
+}
+
 export const TOOLS: ToolDef[] = [
   {
     name: 'save_file',
@@ -143,7 +156,11 @@ export const TOOLS: ToolDef[] = [
       const file = `${LIBRARY_ROOT}/${ctx.botId}/${name}`;
       const content = String(a.content ?? '');
       // A bot that passes a file's path as the content means "save that file": copy it rather than write the path.
-      const asPath = /^\/\S+$/.test(content.trim()) ? await box.readFile(content.trim()) : null;
+      let asPath: Buffer | null = null;
+      if (/^\/\S+$/.test(content.trim())) {
+        try { asPath = await box.readFile(libraryReadPath(ctx.botId, content.trim())); }
+        catch { return { output: 'Only files in your own Library can be copied.' }; }
+      }
       if (asPath && /\.(png|jpe?g|webp|gif)$/i.test(name)) {
         const r = await postImage(ctx.botId, content.trim());
         return { output: r.message, ...(r.ok ? { summary: `Saved ${r.name}` } : {}) };
@@ -154,15 +171,19 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'read_document',
-    description: "Read a document and get its text as Markdown: PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx/.xls), CSV, HTML, EPUB, Outlook .msg, ZIP, or a web page / YouTube link. Use it for files the user attached (they are in your Library under uploads/) and for any file on your computer. Tables come back as Markdown tables.",
+    description: "Read a PDF, Word, PowerPoint, Excel, HTML or other document from this bot\u0027s Library into Markdown. Only Library files are supported. To read an online document, first download an authorised public file into the Library through your browser.",
     parameters: obj({ source: { type: 'string', description: 'Absolute path, a path inside your Library (e.g. uploads/contract.pdf), or an http(s) link.' } }, ['source']),
     activity: 'reading_web',
     label: 'Reading a document',
     impl: async (a, ctx) => {
       const src = String(a.source ?? '').trim();
       if (!src) return { output: 'Give the path or link of the document.' };
-      const isUrl = /^https?:\/\//i.test(src);
-      const target = isUrl || src.startsWith('/') ? src : `${LIBRARY_ROOT}/${ctx.botId}/${src.replace(/^\.?\/+/, '')}`;
+      if (/^[a-z][a-z\d+.-]*:\/\//i.test(src)) return { output: 'For security, download the public file to your Library first.' };
+      let target: string;
+      try {
+        target = libraryReadPath(ctx.botId, src);
+        if (fs.statSync(target).size > 25 * 1024 * 1024) return { output: 'This file is larger than the 25 MB document limit.' };
+      } catch { return { output: 'Document not found in your Library, or access denied.' }; }
       const r = await box.bash(`command -v markitdown >/dev/null || { echo HQ_NO_MARKITDOWN; exit 3; }; markitdown ${box.quote(target)} 2>&1`, 180);
       if (r.output.includes('HQ_NO_MARKITDOWN')) return { output: 'Document reading is not installed on this server yet (run scripts/update.sh on the server). Try pdftotext or pandoc in the terminal meanwhile.' };
       if (r.exit_code !== 0) return { output: `Could not read ${src}: ${r.output.trim().slice(-600)}` };
