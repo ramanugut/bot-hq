@@ -14,7 +14,7 @@ import type { ActivityKind } from '../types.js';
 import { Cron } from 'croner';
 import fs from 'node:fs';
 import { safeLibraryReadPath } from '../lib/library-path.js';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 
 /** Only one video render at a time across the small EC2 server. */
 const rendering = new Set<string>();
@@ -330,6 +330,57 @@ export const TOOLS: ToolDef[] = [
       return {
         output: `Rendering started: ${brief.scenes.length} scenes, ${brief.style} style, ${brief.format || 'portrait'}. It takes 2 to 6 minutes and appears in the chat by itself, saved as ${out}. Tell the user it is on its way; do not wait, poll or render it again.`,
         summary: `Rendering a ${brief.style} video`,
+      };
+    },
+  },
+  {
+    name: 'make_motion_graphic',
+    description: "Make a motion graphics video from text alone (no photos or voice needed): animated type, numbers, lists, charts, quotes and a logo ending, drawn in code so text is always sharp. Use it for explainers, stat videos, announcements, tips and quote posts; use make_promo_video when you have photos or want a voice-over. Unlimited looks: every seed gives a different, repeatable style (same seed = same look, so reuse a seed to keep a brand consistent). Storyboard: {format:'9:16'|'1:1'|'16:9', brand?:'Name', style?:preset, dna?:{seed:'any text', hue?:0-345, ...locked axes}, beats:[...]}. Presets (style): swiss-minimal, bold-kinetic, neo-brutalist, dark-tech, glass-ui, corporate-clean, editorial, luxury, synthwave, memphis-pop, flat-explainer, isometric-data, doodle, aurora, glitch-cyber, terminal. Or lock single axes in dna: scheme (monochrome|analogous|complementary|split-complementary|triadic|duotone|neutral-accent|neon-on-black), tone (dark|light|colour), type (grotesque|geo-mono|condensed|heavy-mono|humanist|serif-sans|contrast-serif|wide|rounded|handwritten|mono-only|characterful), shape (sharp|rounded|blob|line|chunky|isometric|hand-drawn|pixel), motion (snappy|smooth|bouncy|elegant|mechanical|glitchy|organic|heavy), texture (flat|grain|paper|mesh|glass|scanline), layout (centred|editorial|grid|split|full-bleed|cards), transition (cut|wipe|push|zoom|mask|morph|blur|glitch); hue = the brand colour's hue. Leave style and dna out for a fresh look each time. Beats (each has component + seconds, 2 to 4 in steps of 0.5; the last beat at least 2.5): hero-title {text, emphasis?}, kinetic-line {text, emphasis?}, stat-counter {value:number, prefix?, suffix?, label}, list-reveal {title?, items:[2-5]}, split-compare {left:{label,text}, right:{label,text}}, chart {title?, type:'bar'|'line'|'ring', data:[{label,value}]}, quote {text, by?}, steps {title?, items:[2-5]}, icon-grid {items:[{icon,label}]} (icons: check bolt shield clock heart star globe lock chat chart rocket cloud), ui-pan {image?:screenshot path in your Library, text?}, lower-third {text?, name, title?}, cta-card {text, button?}, logo-sting {logo?:image path in your Library, tagline?}. Rules: start with the boldest claim or number in 7 words or fewer; at most 12 words per beat; one idea per beat; never the same component twice in a row; order hook, points, proof, call to action, logo; 4-7 beats = 12-25 seconds; only facts the user gave you, never invented numbers. If it answers with rule breaks, fix exactly those and call again. Renders in the background (1 to 5 minutes); the video appears in the chat by itself.",
+    parameters: obj({
+      storyboard: { type: 'object', description: 'The storyboard described above.' },
+      filename: { type: 'string', description: 'e.g. launch-stats.mp4' },
+      quality: { type: 'string', enum: ['draft', 'standard'], description: 'draft is faster, for a first look. Default standard.' },
+      caption: { type: 'string', description: 'Short line shown under the video in the chat.' },
+    }, ['storyboard']),
+    activity: 'drafting_file',
+    label: 'Making a motion graphic',
+    impl: async (a, ctx) => {
+      if (!box.local) return { output: 'Video rendering runs only on the self-hosted server.' };
+      const sb = typeof a.storyboard === 'string' ? (() => { try { return JSON.parse(a.storyboard); } catch { return null; } })() : a.storyboard;
+      if (!sb || !Array.isArray(sb.beats) || !sb.beats.length || sb.beats.length > 16 || JSON.stringify(sb).length > 64_000) return { output: 'A storyboard must contain 1 to 16 beats and be smaller than 64 KB.' };
+      // Images may only come from this bot's own Library (realpath-checked), never from elsewhere on the server.
+      try {
+        for (const b of sb.beats) for (const key of ['image', 'logo']) if (b?.[key]) b[key] = libraryReadPath(ctx.botId, String(b[key]));
+      } catch (e: any) { return { output: `Image problem: ${e?.message ?? e}. Use image files inside your Library.` }; }
+      if (rendering.size) return { output: 'A video is already rendering on this server. Try again after it finishes.' };
+      const dir = `${LIBRARY_ROOT}/${ctx.botId}`;
+      fs.mkdirSync(dir, { recursive: true });
+      // No style chosen: a new seed each time, so a run of videos doesn't all look alike. The seed is reported back for reuse.
+      if (!sb.style && !sb.dna?.seed) sb.dna = { ...(sb.dna ?? {}), seed: newId('look') };
+      const name = (String(a.filename || 'motion.mp4').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]*$/, '') || 'motion') + '.mp4';
+      const out = `${dir}/${name}`;
+      const specFile = `${dir}/.motion-${Date.now()}.json`;
+      fs.writeFileSync(specFile, JSON.stringify(sb));
+      const script = new URL('../../../scripts/tools/motion/make-motion.mjs', import.meta.url).pathname;
+      const toolEnv = { ...process.env, PATH: `/opt/hq/node/bin:${process.env.PATH ?? ''}` };
+      // Quality gate first (a few seconds): rule breaks go back to the bot to fix, instead of rendering a weak video.
+      const check = await new Promise<any>((resolve) => {
+        execFile(process.execPath, [script, '--spec', specFile, '--check', '--json'], { timeout: 90_000, env: toolEnv, maxBuffer: 1_000_000 }, (_err, stdout) => {
+          try { resolve(JSON.parse(String(stdout).trim().split('\n').pop() || '')); } catch { resolve(null); }
+        });
+      });
+      if (!check) { fs.rmSync(specFile, { force: true }); return { output: 'The motion engine could not check the storyboard on this server (is Chromium installed?). Nothing was rendered.' }; }
+      if (!check.ok) {
+        fs.rmSync(specFile, { force: true });
+        const list = (check.failures ?? []).map((f: any) => `- ${typeof f === 'string' ? f : f.message}`).join('\n');
+        return { output: `Not rendered: the storyboard breaks these rules. Fix them and call make_motion_graphic again.\n${list || check.message}`.slice(0, 3000) };
+      }
+      const look = check.dna ?? {};
+      startRender(ctx.botId, process.execPath, [script, '--spec', specFile, '--out', out, '--quality', a.quality === 'draft' ? 'draft' : 'standard'], out,
+        a.caption ? String(a.caption) : `${name} · ${look.motion ?? ''} ${look.type ?? ''}, ${sb.format || '16:9'}`, () => fs.rmSync(specFile, { force: true }));
+      return {
+        output: `Rendering started: ${sb.beats.length} beats, ${check.seconds}s, ${sb.format}. Style seed "${look.seed}" (${look.scheme}, ${look.tone}, ${look.type}, ${look.motion}); pass dna:{seed:"${look.seed}"} to get this same look again. It takes 1 to 5 minutes and appears in the chat by itself, saved as ${out}. Tell the user it is on its way; do not wait, poll or render it again.`,
+        summary: `Rendering a motion graphic`,
       };
     },
   },
@@ -690,7 +741,7 @@ export function policyFor(userId: string, toolName: string, args: any): { decisi
   if (toolMap.has(toolName)) {
     // Native Botly tools also need a real permission gate, not only a polite AI prompt.
     const sensitive = new Set(['create_routine', 'create_event_routine', 'update_routine', 'delete_routine',
-      'create_group', 'make_promo_video', 'render_video_project']);
+      'create_group', 'make_promo_video', 'make_motion_graphic', 'render_video_project']);
     const requiresApproval = sensitive.has(toolName) || (toolName === 'create_bot' && args?.confirmed === true)
       || (toolName === 'set_heartbeat' && Number(args?.minutes) > 0);
     if (!requiresApproval) return { decision: 'allow', key: toolName, title: toolName };
