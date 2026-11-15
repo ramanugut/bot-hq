@@ -39,7 +39,7 @@ export function ChatView() {
       <Composer bot={bot} running={!!live?.isRunning} />
       <header className="chat__header">
         <button type="button" className="icon-btn icon-btn--bordered chat__menu-btn" onClick={() => set({ sidebarCollapsed: false })} aria-label="Show bots">
-          <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden><path d="M3 5h12M3 9h12M3 13h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+          <Icon name="sidebar" size={18} />
         </button>
         <span className="chat__pill-anchor">
           <button type="button" className="chat__pill" onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}>
@@ -62,7 +62,7 @@ export function ChatView() {
         </span>
         <div className="chat__header-right">
           <button type="button" className="icon-btn icon-btn--bordered chat__chats-btn" onClick={() => set({ chatsOpen: !chatsOpen })} aria-label="Chats" title="All chats with this Bot">
-            <svg width="17" height="17" viewBox="0 0 18 18" aria-hidden><path d="M3.5 4.5h11a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H8l-3 2.5V12.5H3.5a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /><path d="M6 8h6M6 10h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" /></svg>
+            <Icon name="chats" size={17} />
             <span>Chats</span>
           </button>
           {!detailsOpen && (
