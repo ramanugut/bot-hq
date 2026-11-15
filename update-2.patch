@@ -1,0 +1,206 @@
+diff --git a/scripts/install-local.sh b/scripts/install-local.sh
+index f93d49b..17b6ec4 100644
+--- a/scripts/install-local.sh
++++ b/scripts/install-local.sh
+@@ -167,6 +167,23 @@ EOF
+ systemctl restart caddy
+ sleep 5
+ 
++# Follow the public IP if the server is stopped and started (AWS gives it a new one).
++cat > /etc/systemd/system/hq-address.service <<EOF
++[Unit]
++Description=Keep Bot HQ's address in step with the public IP
++After=network-online.target supervisor.service caddy.service
++Wants=network-online.target
++
++[Service]
++Type=oneshot
++ExecStart=/bin/bash $APP/scripts/refresh-address.sh
++
++[Install]
++WantedBy=multi-user.target
++EOF
++systemctl daemon-reload
++systemctl enable hq-address.service >/dev/null 2>&1
++
+ echo
+ echo "Done. Open: $PUBLIC_URL"
+ echo "(If it doesn't load, open ports 80 and 443 in the server's AWS security group.)"
+diff --git a/scripts/refresh-address.sh b/scripts/refresh-address.sh
+new file mode 100644
+index 0000000..728bdec
+--- /dev/null
++++ b/scripts/refresh-address.sh
+@@ -0,0 +1,22 @@
++#!/usr/bin/env bash
++# Keep the app's address in step with the server's public IP (run at boot by hq-address.service).
++# Only for the free https://<ip-with-dashes>.sslip.io address; a custom address is left alone.
++set -euo pipefail
++ENV_FILE="${ENV_FILE:-/opt/hq/app/.env}"
++cur="$(grep -E '^APP_URL=' "$ENV_FILE" | cut -d= -f2-)"
++case "$cur" in https://*.sslip.io) ;; *) echo "custom address $cur: nothing to do"; exit 0 ;; esac
++ip=""
++for _ in $(seq 1 30); do
++  ip="$(curl -fsS --max-time 5 https://checkip.amazonaws.com 2>/dev/null | tr -d '[:space:]' || true)"
++  [[ "$ip" =~ ^[0-9]+(\.[0-9]+){3}$ ]] && break
++  ip=""; sleep 2
++done
++[ -n "$ip" ] || { echo "could not find the public IP"; exit 1; }
++new="https://${ip//./-}.sslip.io"
++[ "$new" = "$cur" ] && { echo "address unchanged: $cur"; exit 0; }
++sed -i -e "s|^APP_URL=.*|APP_URL=$new|" -e "s|^SERVER_URL=.*|SERVER_URL=$new|" "$ENV_FILE"
++port="$(grep -E '^PORT=' "$ENV_FILE" | cut -d= -f2-)"
++printf '%s {\n\treverse_proxy 127.0.0.1:%s\n}\n' "${new#https://}" "${port:-8787}" > /etc/caddy/Caddyfile
++systemctl restart caddy
++supervisorctl restart hq-app >/dev/null
++echo "address changed: $cur -> $new"
+diff --git a/server/src/agent/prompt.ts b/server/src/agent/prompt.ts
+index 929da8f..1c5ede3 100644
+--- a/server/src/agent/prompt.ts
++++ b/server/src/agent/prompt.ts
+@@ -23,6 +23,7 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
+     .join('\n');
+   const groups = (db.prepare("SELECT name FROM bots WHERE user_id=? AND kind='room' AND members LIKE ? ORDER BY created_at").all(userId, `%${botId}%`) as any[]).map((g) => g.name).join(', ');
+   const skills = (db.prepare('SELECT name, body FROM skills WHERE bot_id=? ORDER BY created_at').all(botId) as any[]).map((s) => `### ${s.name}\n${s.body}`).join('\n\n');
++  const agentTotal = (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as any).n as number;
+   const routines = listRoutines(botId).map((r) => `- ${r.name} (${r.id}): ${r.enabled ? r.description : 'paused'}; ${r.prompt.slice(0, 120)}`).join('\n');
+   let apps = '';
+   try { apps = [...(await connectedToolkits(userId))].sort().join(', '); } catch { apps = '(could not check right now)'; }
+@@ -40,7 +41,8 @@ ${hasComposio ? `- Connected apps (Gmail, Calendar, Slack, GitHub, Notion and ma
+ - Some actions in connected apps wait for ${owner} to approve them. The tool call simply takes longer and then returns. If the answer is that they declined, do not retry; find another way or say what you could not do.
+ ` : `- Connected apps are switched off on this install: never call request_app_connection. For Gmail, Facebook, Instagram, TikTok and every other site, use the browser on your own screen. ${owner} signs in there for you; never ask for passwords or codes in chat. If a site needs a login you don't have, ask ${owner} to sign in on your screen (they open it in the app and take control), then carry on.
+ `}${env.xaiKey ? `- x_search researches X (Twitter) live: what is being posted, what is going viral, what an account said.
+-` : ''}- create_bot adds a new agent to the team when ${owner} asks for one; it shows them a Yes/No card first.
++` : ''}- show_image puts an image in the chat (and the Library). Whenever you make an image, call it with the image's path. Check that the image tool really produced a file before you say it is done.
++- create_bot adds a new agent to the team when ${owner} asks for one; it shows them a Yes/No card first.
+ - save_file puts a finished deliverable in your Library, where ${owner} can open and download it. Anything you write under ${LIBRARY_ROOT}/${botId}/ shows up there too.
+ - ask_user asks a multiple-choice question when you need a real decision. After calling it, stop; the answer arrives as the next message.
+ - create_task and update_task track work ${owner} asked for, so they can see what is in progress.
+@@ -51,6 +53,11 @@ ${hasComposio ? `- Connected apps (Gmail, Calendar, Slack, GitHub, Notion and ma
+ ## Your computer
+ You have your own screen on a Linux computer shared by the team: a desktop with your own browser. ${owner} can watch it live in the app and can take over the mouse and keyboard. Use your browser and computer tools for websites${hasComposio ? ' that have no connected app' : ''}. Stay on your own screen.
+ 
++## This install (know these limits and say so when they matter)
++- Team size: this server has room for ${env.maxBots} bots in total (${agentTotal} now). It has little memory, so each bot needs its own share. If ${owner} asks for more bots than that, say the team is full and that removing a bot or moving to a bigger server makes room. Never promise a bot you cannot create.
++- Usage: your model runs on ${owner}'s own subscription, which has usage limits per few hours and per week, shared with their other use of it. Work economically: plan before acting, avoid repeating the same step, keep replies short, and do not take screenshots you do not need. Do not set up routines that run more often than hourly unless ${owner} asks for that explicitly, and mention that frequent routines use up their allowance. If a model call fails because a usage limit was reached, tell ${owner} plainly that the subscription limit was hit and when it usually resets (within a few hours), and suggest a lighter model or lower reasoning effort in the bot's Engine settings.
++- Address: the app is at ${env.appUrl}. That address follows the server's public IP. If the server is stopped and started in AWS, the IP and so the address change; the server updates itself on start, and ${owner} then signs in again at the new address with the same email and password. If ${owner} cannot reach the app, this is the likely reason.
++
+ ## Style
+ - Write like a sharp colleague texting: short, warm, direct. No headings for simple replies. Lists or tables only when they help.
+ - Never say something is done unless a tool result shows it. Never invent facts.
+diff --git a/server/src/agent/tools.ts b/server/src/agent/tools.ts
+index 3ee11f3..ae848fb 100644
+--- a/server/src/agent/tools.ts
++++ b/server/src/agent/tools.ts
+@@ -104,6 +104,29 @@ export const TOOLS: ToolDef[] = [
+       return { output: JSON.stringify({ ok: true, path: file }), summary: `Saved ${name}` };
+     },
+   },
++  {
++    name: 'show_image',
++    description: "Show an image in the chat (PNG, JPG, WEBP or GIF). Give the path of an image you made, e.g. one from your image generation tool; it is copied into your Library and appears in the conversation. Call it every time you make an image for the user.",
++    parameters: obj({ path: { type: 'string', description: 'Absolute path of the image file on your computer' }, caption: { type: 'string' } }, ['path']),
++    activity: 'drafting_file',
++    label: 'Sharing an image',
++    impl: async (a, ctx) => {
++      const src = String(a.path ?? '');
++      const ext = (src.split('.').pop() ?? '').toLowerCase();
++      if (!['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(ext)) return { output: 'Only PNG, JPG, WEBP or GIF can be shown. Convert the image first.' };
++      const data = await box.readFile(src);
++      if (!data) return { output: `No file at ${src}.` };
++      const magic = data.subarray(0, 12);
++      const isImage = (magic[0] === 0x89 && magic[1] === 0x50) || (magic[0] === 0xff && magic[1] === 0xd8) || magic.subarray(0, 4).toString() === 'RIFF' || magic.subarray(0, 3).toString() === 'GIF';
++      const pngTiny = magic[0] === 0x89 && data.length >= 24 && (data.readUInt32BE(16) < 64 || data.readUInt32BE(20) < 64);
++      if (!isImage || pngTiny) return { output: `${src} is not a real image (${data.length} bytes). Do not claim it was made; generate it again.` };
++      const name = (src.split('/').pop() ?? 'image.' + ext).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
++      const dest = `${LIBRARY_ROOT}/${ctx.botId}/${name}`;
++      if (dest !== src) await box.writeFile(dest, data);
++      appendRow(ctx.botId, 'card', { type: 'card', card: 'image', path: name, ...(a.caption ? { caption: String(a.caption).slice(0, 300) } : {}) });
++      return { output: `Shown in the chat and saved to the Library as ${name}.`, summary: `Shared ${name}` };
++    },
++  },
+   {
+     name: 'x_search',
+     description: "Research X (Twitter) live: what people are posting about a topic, what is going viral, reactions to news, or one account's recent posts. Returns a written answer with links to the posts. Ask one focused question per call and say what you want back, e.g. \"the 10 most-engaged posts about AI agents from the last 48 hours, with author, likes and link\".",
+diff --git a/server/src/engine.ts b/server/src/engine.ts
+index 1c4f6a5..4df2d22 100644
+--- a/server/src/engine.ts
++++ b/server/src/engine.ts
+@@ -109,7 +109,7 @@ const SHARED_ENV = [
+ ];
+ 
+ /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
+-const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers'];
++const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers', 'image_gen'];
+ 
+ function soul(b: any): string {
+   const owner = (db.prepare('SELECT name FROM users WHERE id=?').get(b.user_id) as any)?.name ?? 'the user';
+diff --git a/server/src/routes-config.ts b/server/src/routes-config.ts
+index 9e0839c..a6ab869 100644
+--- a/server/src/routes-config.ts
++++ b/server/src/routes-config.ts
+@@ -275,12 +275,16 @@ configApi.get('/bots/:id/files/raw', (c) => {
+     return c.json({ error: 'not found' }, 404);
+   }
+   const name = rel.split('/').pop()!;
++  // Raster images can be shown in the chat (?inline=1). SVG stays a download: it can carry scripts.
++  const IMG: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif' };
++  const imgType = c.req.query('inline') === '1' ? IMG[name.split('.').pop()!.toLowerCase()] : undefined;
+   return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, {
+     headers: {
+-      'content-type': 'application/octet-stream',
++      'content-type': imgType ?? 'application/octet-stream',
+       'content-length': String(fs.statSync(file).size),
+-      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
++      'content-disposition': `${imgType ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
+       'x-content-type-options': 'nosniff',
++      ...(imgType ? { 'cache-control': 'private, max-age=86400', 'content-security-policy': "default-src 'none'" } : {}),
+     },
+   });
+ });
+diff --git a/server/src/types.ts b/server/src/types.ts
+index f857e15..a364f19 100644
+--- a/server/src/types.ts
++++ b/server/src/types.ts
+@@ -121,6 +121,14 @@ export type CardBody =
+       text: string;
+       approvalId: string;
+       status: 'pending' | 'sent' | 'discarded';
++    }
++  | {
++      type: 'card';
++      card: 'image';
++      /** Path inside the bot's Library. */
++      path: string;
++      caption?: string;
++      status?: 'shown';
+     };
+ 
+ export interface EventBody {
+diff --git a/web/src/components/cards/Cards.tsx b/web/src/components/cards/Cards.tsx
+index 9767955..f3f2a4c 100644
+--- a/web/src/components/cards/Cards.tsx
++++ b/web/src/components/cards/Cards.tsx
+@@ -203,6 +203,22 @@ export function CardRow({ row }: { row: Row }) {
+     case 'question': return <QuestionCard row={row} body={b} />;
+     case 'connect': return <ConnectCard row={row} body={b} />;
+     case 'draft': return <DraftCard body={b} />;
++    case 'image': return <ImageCard row={row} body={b} />;
+     default: return null;
+   }
+ }
++
++export function ImageCard({ row, body }: { row: Row; body: Card<'image'> }) {
++  const src = `/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}&inline=1`;
++  return (
++    <div className="card image-card" style={{ maxWidth: 420 }}>
++      <a href={src} target="_blank" rel="noreferrer">
++        <img src={src} alt={body.caption ?? body.path} loading="lazy" style={{ width: '100%', height: 'auto', borderRadius: 10, display: 'block' }} />
++      </a>
++      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: 12, opacity: 0.7 }}>
++        <span>{body.caption ?? body.path}</span>
++        <a href={`/api/bots/${row.botId}/files/raw?path=${encodeURIComponent(body.path)}`} download>Download</a>
++      </div>
++    </div>
++  );
++}
