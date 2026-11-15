@@ -158,6 +158,7 @@ export const allLive = (userId: string) => listBots(userId).map((b) => getLive(b
 // ---------- routines / tasks ----------
 
 export function describeCron(expr: string): string {
+  if (isOnceSchedule(expr)) return `Once, ${new Date(expr).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' })} UTC`;
   const p = expr.trim().split(/\s+/);
   if (p.length !== 5) return expr;
   const [m, h, dom, mon, dow] = p;
@@ -192,3 +193,14 @@ export const listRoutines = (botId: string) => (db.prepare('SELECT * FROM routin
 
 export const toTask = (r: any): Task => ({ id: r.id, botId: r.bot_id, title: r.title, state: r.state, note: r.note, updatedAt: r.updated_at });
 export const listTasks = (botId: string) => (db.prepare('SELECT * FROM tasks WHERE bot_id=? ORDER BY updated_at DESC').all(botId) as any[]).map(toTask);
+
+/** A one-off schedule is an ISO date-time with an offset, e.g. 2026-11-16T17:00:00+02:00. */
+export function isOnceSchedule(expr: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(expr.trim()) && !Number.isNaN(Date.parse(expr));
+}
+
+/** The user's time zone (from their browser), or the server's default. */
+export function userTimezone(userId: string): string {
+  const r = db.prepare('SELECT timezone FROM users WHERE id=?').get(userId) as any;
+  return r?.timezone || process.env.HQ_TIMEZONE || 'UTC';
+}

@@ -28,6 +28,7 @@ export const api = {
   me: () => req<{ user: User | null; devLogin: boolean; googleLogin?: boolean }>('GET', '/auth/me'),
   passwordLogin: (email: string, password: string) => req<{ ok: true }>('POST', '/auth/password', { email, password }),
   devLogin: (email: string, name?: string) => req<{ ok: true }>('POST', '/auth/dev', { email, name }),
+  setTimezone: (tz: string) => req<{ ok: true }>('POST', '/me/timezone', { tz }),
   logout: () => req<{ ok: true }>('POST', '/auth/logout'),
 
   bots: () => req<{ bots: Bot[]; live: LiveState[] }>('GET', '/bots'),

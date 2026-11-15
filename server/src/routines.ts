@@ -1,6 +1,6 @@
 import { Cron } from 'croner';
 import { db, now } from './db.js';
-import { appendRow } from './store.js';
+import { appendRow, isOnceSchedule } from './store.js';
 import type { Routine } from './types.js';
 import { isEventSchedule, setEventRoutineEnabled } from './triggers.js';
 
@@ -18,7 +18,11 @@ export function scheduleRoutine(r: Pick<Routine, 'id' | 'botId' | 'name' | 'prom
   if (isEventSchedule(r.schedule)) { void setEventRoutineEnabled(r.id, true); return; }
   unscheduleRoutine(r.id);
   try {
-    const job = new Cron(r.schedule, { timezone: r.timezone || 'UTC', protect: true }, () => runRoutine(r.id));
+    const once = isOnceSchedule(r.schedule);
+    if (once && Date.parse(r.schedule) <= Date.now()) return; // already in the past
+    const job = once
+      ? new Cron(new Date(r.schedule), { protect: true }, () => runRoutine(r.id))
+      : new Cron(r.schedule, { timezone: r.timezone || 'UTC', protect: true }, () => runRoutine(r.id));
     jobs.set(r.id, job);
   } catch (e) {
     console.warn('[routines] bad schedule', r.id, r.schedule, (e as Error).message);
@@ -36,6 +40,8 @@ export function runRoutine(id: string) {
   const r = db.prepare('SELECT * FROM routines WHERE id=?').get(id) as any;
   if (!r || !enqueueFn) return;
   db.prepare('UPDATE routines SET last_run_at=? WHERE id=?').run(now(), id);
+  // A one-off job switches itself off after it has run.
+  if (isOnceSchedule(r.schedule)) { db.prepare('UPDATE routines SET enabled=0 WHERE id=?').run(id); jobs.get(id)?.stop(); jobs.delete(id); }
   appendRow(r.bot_id, 'event', { type: 'event', event: 'routine-run', text: `Running routine: ${r.name}`, ref: id });
   enqueueFn(r.bot_id, { type: 'routine', routineId: id, name: r.name, prompt: r.prompt });
 }

@@ -198,6 +198,14 @@ api.use('/*', async (c, next) => {
   return requireUser(c, next);
 });
 
+// The browser tells us the user's time zone, so "8am" in a routine means their 8am.
+api.post('/me/timezone', async (c) => {
+  const { tz } = await c.req.json<{ tz?: string }>().catch(() => ({} as any));
+  try { new Intl.DateTimeFormat('en', { timeZone: String(tz) }); } catch { return c.json({ error: 'bad time zone' }, 400); }
+  db.prepare('UPDATE users SET timezone=? WHERE id=?').run(String(tz), c.get('user').id);
+  return c.json({ ok: true });
+});
+
 // ---------- events (SSE) ----------
 
 api.get('/events', (c) => {

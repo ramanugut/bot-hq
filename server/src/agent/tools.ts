@@ -3,7 +3,7 @@ import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
 import { box } from '../box.js';
 import { env } from '../env.js';
-import { appendRow, getBotRow, listRoutines, toRoutine, describeCron } from '../store.js';
+import { appendRow, getBotRow, listRoutines, toRoutine, describeCron, isOnceSchedule, userTimezone } from '../store.js';
 import { executeComposio, innerToolSlugs, isReadOnlySlug, toolkitInfo } from '../composio.js';
 import { scheduleRoutine, unscheduleRoutine } from '../routines.js';
 import { createEventRoutine, deleteEventTrigger, describeEvent, listTriggerTypes } from '../triggers.js';
@@ -141,17 +141,25 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'create_routine',
-    description: 'Create a recurring routine you will run on a schedule. `schedule` is a 5-field cron expression (minute hour day-of-month month day-of-week), e.g. "0 8 * * 1-5" for weekdays at 8:00. `prompt` is the instruction you will follow each time it runs.',
-    parameters: obj({ name: { type: 'string' }, prompt: { type: 'string' }, schedule: { type: 'string' }, timezone: { type: 'string', description: 'IANA timezone, e.g. America/New_York' } }, ['name', 'prompt', 'schedule']),
+    description: 'Schedule a job you will run automatically, recurring or once. The user sees and controls it in the app. Use it whenever the user asks for something later or regularly ("every morning", "remind me at 5", "check this weekly"), and on your own when a task clearly needs a follow-up. `schedule`: a 5-field cron expression (minute hour day-of-month month day-of-week) for repeating jobs, e.g. "0 8 * * 1-5" for weekdays at 8:00; or, for a one-off job, a date-time with offset such as "2026-11-16T17:00:00+02:00". Times are in the user\'s time zone unless you pass another. `prompt` is the full instruction you will follow when it runs (it runs without this conversation in front of you, so include every detail).',
+    parameters: obj({ name: { type: 'string' }, prompt: { type: 'string' }, schedule: { type: 'string' }, timezone: { type: 'string', description: "IANA time zone; defaults to the user's" } }, ['name', 'prompt', 'schedule']),
     activity: 'working',
     label: 'Setting up a routine',
     impl: async (a, ctx) => {
-      try { new Cron(a.schedule, { paused: true, timezone: a.timezone || 'UTC' }); } catch (e: any) { return { output: `Invalid schedule: ${e.message}` }; }
+      const tz = a.timezone || userTimezone(ctx.userId);
+      const sched = String(a.schedule ?? '').trim();
+      if (isOnceSchedule(sched)) {
+        if (Date.parse(sched) <= Date.now()) return { output: 'That time is already in the past. Pick a future time.' };
+      } else {
+        try { new Cron(sched, { paused: true, timezone: tz }); } catch (e: any) { return { output: `Invalid schedule: ${e.message}` }; }
+        const runs = new Cron(sched, { paused: true, timezone: tz }).nextRuns(3).map((d) => d.getTime());
+        if (runs.length >= 2 && runs[1] - runs[0] < 15 * 60_000) return { output: 'That runs more often than every 15 minutes, which would use up the user\'s model allowance. Choose a slower schedule, or ask the user first.' };
+      }
       const id = newId('rt');
-      db.prepare('INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at) VALUES (?,?,?,?,?,?,1,?)').run(id, ctx.botId, a.name, a.prompt, a.schedule, a.timezone || 'UTC', now());
+      db.prepare('INSERT INTO routines(id,bot_id,name,prompt,schedule,timezone,enabled,created_at) VALUES (?,?,?,?,?,?,1,?)').run(id, ctx.botId, a.name, a.prompt, sched, tz, now());
       const r = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(id));
       scheduleRoutine(r);
-      appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${a.name} · ${describeCron(a.schedule)}`, ref: id });
+      appendRow(ctx.botId, 'event', { type: 'event', event: 'routine-created', text: `Routine created: ${a.name} · ${describeCron(sched)}`, ref: id });
       hub.emit(ctx.userId, { type: 'routines', botId: ctx.botId });
       return { output: JSON.stringify({ ok: true, routine: r }), summary: `Created routine ${a.name}` };
     },
@@ -224,7 +232,7 @@ export const TOOLS: ToolDef[] = [
       const cur = db.prepare('SELECT * FROM routines WHERE id=? AND bot_id=?').get(a.routine_id, ctx.botId) as any;
       if (!cur) return { output: 'No such routine.' };
       const next = { ...cur, name: a.name ?? cur.name, prompt: a.prompt ?? cur.prompt, schedule: a.schedule ?? cur.schedule, timezone: a.timezone ?? cur.timezone, enabled: a.enabled === undefined ? cur.enabled : a.enabled ? 1 : 0 };
-      try { new Cron(next.schedule, { paused: true, timezone: next.timezone }); } catch (e: any) { return { output: `Invalid schedule: ${e.message}` }; }
+      if (!isOnceSchedule(next.schedule)) { try { new Cron(next.schedule, { paused: true, timezone: next.timezone }); } catch (e: any) { return { output: `Invalid schedule: ${e.message}` }; } }
       db.prepare('UPDATE routines SET name=?,prompt=?,schedule=?,timezone=?,enabled=? WHERE id=?').run(next.name, next.prompt, next.schedule, next.timezone, next.enabled, cur.id);
       const r = toRoutine(db.prepare('SELECT * FROM routines WHERE id=?').get(cur.id));
       r.enabled ? scheduleRoutine(r) : unscheduleRoutine(r.id);

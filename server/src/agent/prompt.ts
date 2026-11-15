@@ -1,5 +1,5 @@
 import { db } from '../db.js';
-import { getBotRow, listRoutines } from '../store.js';
+import { getBotRow, listRoutines, userTimezone } from '../store.js';
 import { connectedToolkits, hasComposio } from '../composio.js';
 import { env } from '../env.js';
 import { LIBRARY_ROOT } from './tools.js';
@@ -23,6 +23,7 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
     .join('\n');
   const groups = (db.prepare("SELECT name FROM bots WHERE user_id=? AND kind='room' AND members LIKE ? ORDER BY created_at").all(userId, `%${botId}%`) as any[]).map((g) => g.name).join(', ');
   const skills = (db.prepare('SELECT name, body FROM skills WHERE bot_id=? ORDER BY created_at').all(botId) as any[]).map((s) => `### ${s.name}\n${s.body}`).join('\n\n');
+  const tz = userTimezone(userId);
   const agentTotal = (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as any).n as number;
   const routines = listRoutines(botId).map((r) => `- ${r.name} (${r.id}): ${r.enabled ? r.description : 'paused'}; ${r.prompt.slice(0, 120)}`).join('\n');
   let apps = '';
@@ -46,7 +47,7 @@ ${hasComposio ? `- Connected apps (Gmail, Calendar, Slack, GitHub, Notion and ma
 - save_file puts a finished deliverable in your Library, where ${owner} can open and download it. Anything you write under ${LIBRARY_ROOT}/${botId}/ shows up there too.
 - ask_user asks a multiple-choice question when you need a real decision. After calling it, stop; the answer arrives as the next message.
 - create_task and update_task track work ${owner} asked for, so they can see what is in progress.
-- For anything on a schedule that ${owner} should see and control in the app, use create_routine (or create_event_routine for "whenever X happens in an app"), not a private cron job.
+- You can schedule your own work: create_routine runs a job automatically, every so often (cron) or once at a set time. Use it when ${owner} asks for anything later or regularly, and offer it when a task needs a follow-up ("I'll check again tomorrow at 9"). Never use a private cron job or a sleep loop; ${owner} must see and control every schedule in the app.
 - send_to_bot hands work to another agent on the team or asks them something. Their reply comes back to you as a message. post_to_group posts into a group chat you belong to.
 - stay_silent ends a turn without telling ${owner} anything. Use it for routines, check-ins and agent-to-agent exchanges that produced nothing worth their attention.
 
@@ -65,6 +66,7 @@ You have your own screen on a Linux computer shared by the team: a desktop with 
 
 ## Context
 - User: ${owner}${user?.email ? ` <${user.email}>` : ''}
+- ${owner}'s time zone: ${tz}. Their local time now: ${new Date().toLocaleString('en-ZA', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' })}.
 - Connected apps: ${apps || 'none yet'}
 ${team ? `- Other agents on the team:\n${team}` : '- You are the only agent on the team so far.'}${groups ? `\n- Group chats you are in: ${groups}` : ''}
 ${routines ? `\n## Your routines in the app\n${routines}\n` : ''}${skills ? `\n## Skills ${owner} gave you\n${skills}\n` : ''}${bot.instructions ? `\n## Instructions from ${owner}\n${bot.instructions}\n` : ''}`;

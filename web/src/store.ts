@@ -73,6 +73,7 @@ export const useStore = create<State>((set, get) => ({
     try {
       const { user, devLogin, googleLogin } = await api.me();
       set({ user, devLogin, googleLogin: !!googleLogin, authChecked: true });
+      if (user) { try { void api.setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone).catch(() => {}); } catch { /* old browser */ } }
     } catch {
       set({ user: null, authChecked: true });
     }
