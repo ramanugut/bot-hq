@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Update Botly on the server to the latest code from GitHub. Run as root:
 #   bash /opt/hq/app/scripts/update.sh
+# This is a temporary compatibility release for the existing /opt/hq server.
+# It deliberately does not follow the renamed free-edition branch.
 # Keeps settings (.env), data, bots and logins; only the app's code changes.
 set -euo pipefail
 # All in one function: bash reads it whole before running, so the update replacing this file mid-run is safe.
@@ -9,7 +11,7 @@ main() {
   cd "$APP"
   export PATH=/opt/hq/node/bin:$PATH
   branch="$(git rev-parse --abbrev-ref HEAD)"
-  [ "$branch" = 'free-edition' ] || { echo 'Refusing to deploy a branch other than free-edition' >&2; exit 1; }
+  [ "$branch" = 'legacy-hq-tavily' ] || { echo 'Legacy /opt/hq updater only supports legacy-hq-tavily. Do not use the renamed release here.' >&2; exit 1; }
   [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo 'Uncommitted changes detected; refusing to discard them' >&2; exit 1; }
   before="$(git rev-parse HEAD)"
   git fetch -q origin "$branch"
