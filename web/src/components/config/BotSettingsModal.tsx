@@ -262,7 +262,7 @@ function SoulTab({ bot }: { bot: Bot }) {
         {!soul ? <div className="cfg-empty cfg-empty--flat">Loading…</div> : (
           <textarea className="text-input cfg-textarea cfg-textarea--soul" value={draft} maxLength={20000} spellCheck
             onChange={(e) => setDraft(e.target.value)} aria-label={`${bot.name}'s soul`}
-            placeholder={'e.g.\nYou are Doug, my chief of staff. Calm, sharp and a little dry.\nYou speak South African English and keep messages short.\nYou protect my time: push back on meetings that could be an email.'} />
+            placeholder={'e.g.\nYou are Marvelous, my chief of staff. Calm, sharp and a little dry.\nYou speak South African English and keep messages short.\nYou protect my time: push back on meetings that could be an email.'} />
         )}
         <div className="cfg-field__hint">{draft.length.toLocaleString()} / 20,000 characters. Markdown works.</div>
       </section>

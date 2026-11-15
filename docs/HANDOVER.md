@@ -7,7 +7,7 @@ A team of AI bots, each with its own Linux screen and Chrome, chatted with from 
 Fork of nickvasilescu/bot-hq, changed to run **without Orgo or any paid key**. Branch: **`free-edition`**.
 
 - App: Node 22 + Hono + SQLite (`server/`), React + Vite (`web/`).
-- Bots: [Hermes Agent](https://github.com/NousResearch/hermes-agent). The main bot ("Doug") is the Hermes
+- Bots: [Hermes Agent](https://github.com/NousResearch/hermes-agent). The main bot ("Marvelous") is the Hermes
   install at `/root/.hermes`; extra bots get their own Hermes home under `/opt/hq/data/engines/<botId>`.
 - Model: Hermes provider **openai-codex** (ChatGPT Plus sign-in), model `gpt-6-luna`, reasoning medium.
 - Screens: X displays on the server (`server/src/localscreen.ts`): Xvfb + openbox + x11vnc (localhost only).

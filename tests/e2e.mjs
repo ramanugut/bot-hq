@@ -32,7 +32,7 @@ if (!cookie) {
 }
 const api = (p, init = {}) => fetch(`${BASE}${p}`, { ...init, headers: { 'content-type': 'application/json', cookie: `grokbot_session=${cookie}`, ...(init.headers ?? {}) } });
 // The main bot is whatever agent already runs on the computer; its name comes from the server.
-const MAIN = (await (await api('/api/bots')).json()).bots.find((b) => b.isPrimary)?.name ?? 'Doug';
+const MAIN = (await (await api('/api/bots')).json()).bots.find((b) => b.isPrimary)?.name ?? 'Marvelous';
 
 const browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome', args: ['--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 1512, height: 864 } });

@@ -182,4 +182,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS chats (
   PRIMARY KEY (bot_id, generation)
 )`);
 
+// The main bot used to be called "Doug" out of the box; it is "Marvelous" now. A bot the user renamed is left alone.
+db.prepare("UPDATE bots SET name='Marvelous' WHERE is_primary=1 AND name='Doug'").run();
+
 export const now = () => Date.now();

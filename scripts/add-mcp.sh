@@ -35,4 +35,4 @@ lines = [l for l in lines if not l.startswith('EXTRA_MCP_SERVERS=')] + [f"EXTRA_
 open(e, 'w').write('\n'.join(lines) + '\n')
 print(('removed ' if url == '--remove' else 'added ') + name)
 PY
-supervisorctl restart hq-hermes hq-app >/dev/null && echo "restarted; ask Doug what tools he has from '$name'"
+supervisorctl restart hq-hermes hq-app >/dev/null && echo "restarted; open a new chat and ask your main bot what tools it has from '$name'"
