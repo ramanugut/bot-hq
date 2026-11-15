@@ -58,14 +58,6 @@ async function callTool(botId: string | null, rawName: string, args: any): Promi
   const rowSeq = await claimToolRow(botId, name);
   const ctx: ToolCtx = { userId, botId, enqueueBotMessage, depth: turnDepth(botId) };
   try {
-    const own = toolMap.get(name);
-    if (own) {
-      const r = await own.impl(args, ctx);
-      if (r.endTurn) markSilent(botId);
-      noteToolOutcome(botId, rowSeq, { status: 'done', summary: r.summary });
-      return text(r.output);
-    }
-
     const pol = policyFor(userId, name, args);
     if (pol.decision === 'block') {
       noteToolOutcome(botId, rowSeq, { status: 'denied', summary: 'Not allowed' });
@@ -74,6 +66,13 @@ async function callTool(botId: string | null, rawName: string, args: any): Promi
     if (pol.decision === 'ask') {
       const answer = await requestApproval({ userId, botId }, pol, args, rowSeq);
       if (answer !== 'allow') return text(answer === 'deny' ? DECLINED : SKIPPED);
+    }
+    const own = toolMap.get(name);
+    if (own) {
+      const result = await own.impl(args, ctx);
+      if (result.endTurn) markSilent(botId);
+      noteToolOutcome(botId, rowSeq, { status: 'done', summary: result.summary });
+      return text(result.output);
     }
     const r = await runComposioTool(ctx, name, args);
     noteToolOutcome(botId, rowSeq, { status: r.summary === 'failed' ? 'error' : 'done', summary: r.summary === 'failed' ? 'Failed' : undefined });

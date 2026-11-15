@@ -698,7 +698,18 @@ export const toolMap = new Map(TOOLS.map((t) => [t.name, t]));
 export type Decision = 'allow' | 'ask' | 'block';
 
 export function policyFor(userId: string, toolName: string, args: any): { decision: Decision; key: string; toolkit?: string; title: string } {
-  if (toolMap.has(toolName)) return { decision: 'allow', key: toolName, title: toolName };
+  if (toolMap.has(toolName)) {
+    // Native Botly tools also need a real permission gate, not only a polite AI prompt.
+    const sensitive = new Set(['create_routine', 'create_event_routine', 'update_routine', 'delete_routine',
+      'create_group', 'make_promo_video', 'render_video_project']);
+    const requiresApproval = sensitive.has(toolName) || (toolName === 'create_bot' && args?.confirmed === true)
+      || (toolName === 'set_heartbeat' && Number(args?.minutes) > 0);
+    if (!requiresApproval) return { decision: 'allow', key: toolName, title: toolName };
+    const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as any;
+    const mode = p?.mode ?? 'needs_approval';
+    return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask',
+      key: toolName, title: `Botly: ${toolName.replace(/_/g, ' ')}` };
+  }
   const slugs = innerToolSlugs(toolName, args);
   if (!slugs.length) {
     // Composio's sandbox can run app actions from code, which would slip past the per-action

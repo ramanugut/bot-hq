@@ -16,6 +16,7 @@ main() {
   target="$(git rev-parse "origin/$branch")"
   if [ "$before" = "$target" ]; then echo "Already up to date ($(git log -1 --format=%s))."; exit 0; fi
   rollback() {
+    trap - ERR
     echo 'Deployment failed; attempting to restore the previous release...' >&2
     git reset -q --hard "$before"
     npm ci --ignore-scripts --no-audit --no-fund >/var/log/hq/rollback-npm.log 2>&1 || true
