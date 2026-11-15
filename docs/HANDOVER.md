@@ -76,7 +76,13 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
 - Bots call the `make_promo_video` tool; it renders in the background and posts a playable video card.
 - Server needs `hyperframes@0.9.53` in `/opt/hq/node/bin` (extras.sh installs it) and uses `/usr/local/bin/chromium`
   via `HYPERFRAMES_BROWSER_PATH`; renders with `--low-memory-mode`, CRF 21. Telemetry off.
-- Fonts (Montserrat, Inter: OFL) and gsap.min.js are vendored in `template/`.
+- Fonts (Montserrat, Inter, Playfair Display, Fredoka, Cormorant Garamond: all OFL) and gsap.min.js are vendored in `template/`.
+- Styles (`style`): neon, minimal, editorial, playful, luxury (CSS tokens in index.html + motion table STY in engine.js);
+  the tool rotates them per bot when none is given (`<Library>/.promo-style`). Formats (`format`): portrait, square,
+  landscape (CSS vars per `fmt-*` class). Scenes: hero, image, points, prices, quote, compare, steps, stats, phone, cta;
+  any scene can take a `video` background. `make-promo.py --preview DIR` saves one still per scene without rendering.
+- Free-form: `render_video_project` renders a HyperFrames project the bot wrote in its Library; `/usr/local/bin/hyperframes`
+  (from extras.sh) is a wrapper with our Node, Chromium and telemetry off.
 
 ## Things learned the hard way
 - `update.sh` runs inside one function so the `git reset` that rewrites it mid-run can't break it.

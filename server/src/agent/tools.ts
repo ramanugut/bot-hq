@@ -15,8 +15,42 @@ import { Cron } from 'croner';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 
-/** Bots with a promo video rendering right now (one at a time each). */
+/** Bots with a video rendering right now (one at a time each). */
 const rendering = new Set<string>();
+
+const hyperframesBin = () => (fs.existsSync('/usr/local/bin/hyperframes') ? '/usr/local/bin/hyperframes' : '/opt/hq/node/bin/hyperframes');
+
+/** Run a video render in the background; post the video to the chat (or say why it failed) when it ends. */
+function startRender(botId: string, cmd: string, args: string[], out: string, caption: string, cleanup?: () => void) {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PATH: `/opt/hq/node/bin:${process.env.PATH ?? ''}`,
+    HYPERFRAMES_NO_TELEMETRY: '1', HYPERFRAMES_NO_UPDATE_CHECK: '1', HYPERFRAMES_SKIP_SKILLS: '1',
+    ...(fs.existsSync('/usr/local/bin/chromium') && !process.env.HYPERFRAMES_BROWSER_PATH ? { HYPERFRAMES_BROWSER_PATH: '/usr/local/bin/chromium' } : {}),
+  };
+  const p = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  rendering.add(botId);
+  let log = '';
+  p.stdout.on('data', (d) => { log = (log + d).slice(-20000); });
+  p.stderr.on('data', (d) => { log = (log + d).slice(-20000); });
+  const started = Date.now();
+  const done = async (code: number | null) => {
+    rendering.delete(botId);
+    cleanup?.();
+    const secs = Math.round((Date.now() - started) / 1000);
+    if (code === 0 && fs.existsSync(out)) {
+      const r = await postImage(botId, out, `${caption} · ${secs}s to render`);
+      if (!r.ok) appendRow(botId, 'notice', { type: 'notice', text: r.message, tone: 'error' });
+      const note = /no voice-over|voice-over skipped/.test(log) ? ' (without voice-over: the voice service did not answer)' : '';
+      notifyBot(botId, `Your video is ready${note}`);
+    } else {
+      console.warn('[video] render failed', log.slice(-2000));
+      appendRow(botId, 'notice', { type: 'notice', text: `The video could not be made: ${log.trim().split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400)}`, tone: 'error' });
+    }
+  };
+  p.on('close', (code) => { void done(code); });
+  p.on('error', (e) => { log += String(e); void done(1); });
+}
 
 export interface ToolCtx {
   userId: string;
@@ -213,7 +247,7 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'make_promo_video',
-    description: "Make a polished vertical promo video (1080x1920, for Reels/TikTok/Shorts/Status): bold animated titles that always fit the screen, slow cinematic camera moves over your images, transitions, price cards with counting numbers, a call-to-action ending, a story progress bar, and word-by-word captions timed to a free South African voice-over. It renders in the background (2 to 6 minutes) and the finished video appears in the chat by itself. Make the images first (your image tool, portrait 1080x1920 works best). The brief: {brand:{name,url,logo?,accent?,accent2?,deep?}, voice?:'en-ZA-LeahNeural'|'en-ZA-LukeNeural'|'', music?:path, captions?:bool, scenes:[...]}. Scene types: hero {image,kicker?,title,sub?,say}, points {image?,title,points:[3-4 short lines],say}, prices {image?,title,plans:[{name,price:'R49',per:'/mo',features:[..],popular?:true}],say}, cta {title,button,url?,say}. 'say' is that scene's voice-over line (one short sentence, 6-16 words); the scene lasts as long as its line. Put *stars* around 1-2 words in a title to colour them. Keep titles under 6 words. 4-5 scenes make a 15-25 second video. Colours are hex codes; accent is the main highlight colour.",
+    description: "Make a polished promo video from a short brief: animated titles that always fit, cinematic camera moves, transitions, word-by-word captions timed to a free South African voice-over, and a call-to-action ending. Renders in the background (2 to 6 minutes); the video appears in the chat by itself. Brief: {style?, format?, brand:{name,url,logo?,accent?,accent2?}, voice?:'en-ZA-LeahNeural'|'en-ZA-LukeNeural'|'', music?:path, captions?:bool, scenes:[...]}. style: neon (bold dark, glowing), minimal (clean white, framed photos), editorial (magazine serif, cream paper), playful (bright, bouncy, rounded), luxury (black and gold, slow and elegant); leave it out to rotate styles so videos don't look alike. format: portrait 1080x1920 (Reels/TikTok/Shorts/Status, default), square 1080x1080 (Facebook/Instagram feed), landscape 1920x1080 (YouTube/website). Scene types: hero {image|video,kicker?,title,sub?}, points {title,points:[3-4 short lines]}, prices {title,plans:[{name,price:'R49',per:'/mo',features:[..],popular?:true}]}, quote {quote,author,role?,avatar?,stars?:5} (testimonial), compare {title,before:{label?,text,image?},after:{...}}, steps {title,steps:[3-4]}, stats {title?,stats:[{value:'99.9%',label:'uptime'}]} (numbers count up), phone {title,sub?,screenshot} (a tall website screenshot scrolling in a phone; make it with: chromium --headless --no-sandbox --hide-scrollbars --window-size=430,2400 --screenshot=/path.png URL), cta {title,button,url?}. Every scene takes 'say' (its voice-over line, one sentence of 6-16 words; the scene lasts as long as the line), optional 'video' (an mp4 as moving background) and 'transition' (zoom, whip, wipe, flash, rise, slide, fade). *Stars* around 1-2 words colour them. Titles under 6 words. 4-6 scenes = 15-30 seconds. Images in the video's shape work best.",
     parameters: obj({
       brief: { type: 'object', description: 'The video brief described above.' },
       filename: { type: 'string', description: 'e.g. hosting-promo.mp4' },
@@ -226,42 +260,58 @@ export const TOOLS: ToolDef[] = [
       if (!box.local) return { output: 'Video rendering runs only on the self-hosted server.' };
       const brief = typeof a.brief === 'string' ? (() => { try { return JSON.parse(a.brief); } catch { return null; } })() : a.brief;
       if (!brief || !Array.isArray(brief.scenes) || !brief.scenes.length) return { output: 'The brief needs a scenes list (see the tool description).' };
-      const missing = brief.scenes.flatMap((s: any) => (s?.image && !fs.existsSync(s.image) ? [s.image] : []));
-      if (brief.brand?.logo && !fs.existsSync(brief.brand.logo)) missing.push(brief.brand.logo);
+      const files = [brief.brand?.logo, brief.music, ...brief.scenes.flatMap((s: any) => [s?.image, s?.video, s?.avatar, s?.screenshot, s?.before?.image, s?.after?.image])].filter(Boolean);
+      const missing = files.filter((f: string) => !fs.existsSync(f));
       if (missing.length) return { output: `These files do not exist: ${missing.join(', ')}. Make or find them first.` };
       if (rendering.has(ctx.botId)) return { output: 'A video is already rendering for you; it will appear in the chat when done. Wait for it.' };
-      const name = (String(a.filename || 'promo.mp4').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]*$/, '') || 'promo') + '.mp4';
       const dir = `${LIBRARY_ROOT}/${ctx.botId}`;
+      fs.mkdirSync(dir, { recursive: true });
+      // No style chosen: take the next one, so a run of videos doesn't all look alike.
+      if (!brief.style || brief.style === 'auto') {
+        const order = ['neon', 'minimal', 'playful', 'editorial', 'luxury'];
+        const mark = `${dir}/.promo-style`;
+        let k = 0;
+        try { k = (Number(fs.readFileSync(mark, 'utf8')) || 0) + 1; } catch { /* first video */ }
+        brief.style = order[k % order.length];
+        fs.writeFileSync(mark, String(k));
+      }
+      const name = (String(a.filename || 'promo.mp4').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]*$/, '') || 'promo') + '.mp4';
       const out = `${dir}/${name}`;
       const specFile = `${dir}/.promo-${Date.now()}.json`;
-      fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(specFile, JSON.stringify(brief));
       const script = new URL('../../../scripts/tools/promo/make-promo.py', import.meta.url).pathname;
-      const env = { ...process.env, PATH: `/opt/hq/node/bin:${process.env.PATH ?? ''}` };
-      const p = spawn('python3', [script, '--spec', specFile, '--out', out, '--quality', a.quality === 'draft' ? 'draft' : 'standard'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
-      rendering.add(ctx.botId);
-      let log = '';
-      p.stdout.on('data', (d) => { log += d; });
-      p.stderr.on('data', (d) => { log += d; });
-      const started = Date.now();
-      p.on('close', async (code) => {
-        rendering.delete(ctx.botId);
-        fs.rmSync(specFile, { force: true });
-        const secs = Math.round((Date.now() - started) / 1000);
-        if (code === 0 && fs.existsSync(out)) {
-          const r = await postImage(ctx.botId, out, a.caption ? String(a.caption) : `${name} · rendered in ${secs}s`);
-          if (!r.ok) appendRow(ctx.botId, 'notice', { type: 'notice', text: r.message, tone: 'error' });
-          const note = /no voice-over|voice-over skipped/.test(log) ? ' (without voice-over: the voice service did not answer)' : '';
-          notifyBot(ctx.botId, `Your video is ready${note}`);
-        } else {
-          console.warn('[promo] render failed', log.slice(-2000));
-          appendRow(ctx.botId, 'notice', { type: 'notice', text: `The video could not be made: ${log.trim().split('\n').filter(Boolean).slice(-3).join(' ').slice(0, 400)}`, tone: 'error' });
-        }
-      });
+      startRender(ctx.botId, 'python3', [script, '--spec', specFile, '--out', out, '--quality', a.quality === 'draft' ? 'draft' : 'standard'], out, a.caption ? String(a.caption) : `${name} · ${brief.style}, ${brief.format || 'portrait'}`, () => fs.rmSync(specFile, { force: true }));
       return {
-        output: `Rendering started (${brief.scenes.length} scenes). It takes 2 to 6 minutes and appears in the chat by itself, saved as ${out}. Tell the user it is on its way; do not wait, poll or render it again.`,
-        summary: 'Rendering the video',
+        output: `Rendering started: ${brief.scenes.length} scenes, ${brief.style} style, ${brief.format || 'portrait'}. It takes 2 to 6 minutes and appears in the chat by itself, saved as ${out}. Tell the user it is on its way; do not wait, poll or render it again.`,
+        summary: `Rendering a ${brief.style} video`,
       };
+    },
+  },
+  {
+    name: 'render_video_project',
+    description: "Render a free-form HyperFrames video project you wrote yourself (for ideas the promo templates can't do). The folder must be inside your Library and hold an index.html composition. Run 'hyperframes lint FOLDER' first. Renders in the background (a few minutes); the video appears in the chat by itself.",
+    parameters: obj({
+      folder: { type: 'string', description: 'Project folder inside your Library, e.g. /root/grokbot/files/<you>/videos/launch' },
+      filename: { type: 'string', description: 'e.g. launch.mp4' },
+      quality: { type: 'string', enum: ['draft', 'standard'], description: 'Default standard.' },
+      caption: { type: 'string' },
+    }, ['folder']),
+    activity: 'drafting_file',
+    label: 'Rendering a video',
+    impl: async (a, ctx) => {
+      if (!box.local) return { output: 'Video rendering runs only on the self-hosted server.' };
+      const root = `${LIBRARY_ROOT}/${ctx.botId}`;
+      let folder: string;
+      try { folder = fs.realpathSync(String(a.folder || '')); } catch { return { output: `No folder at ${a.folder}.` }; }
+      if (!folder.startsWith(fs.realpathSync(root) + '/')) return { output: `The project must be inside your Library (${root}/...).` };
+      if (!fs.existsSync(`${folder}/index.html`)) return { output: `${folder} has no index.html. Start one with: hyperframes init ${folder} --example blank --non-interactive --skip-skills --resolution portrait` };
+      if (rendering.has(ctx.botId)) return { output: 'A video is already rendering for you; wait for it.' };
+      const name = (String(a.filename || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]*$/, '') || 'video') + '.mp4';
+      const out = `${root}/${name}`;
+      const args = ['render', folder, '-o', out, '--quality', a.quality === 'draft' ? 'draft' : 'looks', '--low-memory-mode', '--quiet'];
+      if (a.quality !== 'draft') args.push('--crf', '21', '--max-bitrate', '7M');
+      startRender(ctx.botId, hyperframesBin(), args, out, a.caption ? String(a.caption) : name);
+      return { output: `Rendering started; it appears in the chat by itself when done (saved as ${out}). Do not wait or render it again.`, summary: 'Rendering the video' };
     },
   },
   {

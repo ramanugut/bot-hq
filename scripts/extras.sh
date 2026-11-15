@@ -26,6 +26,15 @@ main() {
       && echo "  video engine ready" || { echo "  note: HyperFrames did not install"; tail -5 /var/log/hq/hyperframes.log; }
   fi
 
+  # A 'hyperframes' command for the bots' terminals: our Node, this server's Chromium, no telemetry.
+  cat >/usr/local/bin/hyperframes <<'SH'
+#!/bin/sh
+export PATH=/opt/hq/node/bin:$PATH HYPERFRAMES_NO_TELEMETRY=1 HYPERFRAMES_NO_UPDATE_CHECK=1 HYPERFRAMES_SKIP_SKILLS=1
+[ -z "$HYPERFRAMES_BROWSER_PATH" ] && [ -x /usr/local/bin/chromium ] && export HYPERFRAMES_BROWSER_PATH=/usr/local/bin/chromium
+exec /opt/hq/node/bin/hyperframes "$@"
+SH
+  chmod 755 /usr/local/bin/hyperframes
+
   # ---------- SearXNG in Docker, reachable only from this server
   local dir=/opt/hq/searxng
   if ! command -v docker >/dev/null 2>&1; then
