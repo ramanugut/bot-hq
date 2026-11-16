@@ -65,6 +65,8 @@ export const env = {
   extraMcpServers: process.env.EXTRA_MCP_SERVERS ?? '',
   /** Restricted managed gateways: separate OS users, minimal tools, Botly MCP approvals. Off until prepared. */
   restrictedAgents: process.env.BOTLY_AGENT_SECURITY_MODE === 'restricted',
+  /** Primary Hermes is a separately provisioned non-root process with a restricted tool profile. */
+  restrictedPrimary: process.env.BOTLY_PRIMARY_SECURITY_MODE === 'restricted',
   primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Marvelous',
   primaryBotLabel: process.env.PRIMARY_BOT_LABEL ?? 'Chief of Staff',
 
