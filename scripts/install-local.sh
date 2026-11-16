@@ -4,7 +4,7 @@
 # https://<public-ip-with-dashes>.sslip.io (free, no domain needed).
 #
 # Fresh server, as root:
-#   1. git clone -b free-edition https://github.com/ramanugut/bot-hq.git /opt/botly/app
+#   1. git clone -b free-edition https://github.com/ramanugut/botly.git /opt/botly/app
 #   2. curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash && source ~/.bashrc
 #      hermes model          (pick "ChatGPT or Codex Subscription" and sign in)
 #   3. ALLOWED_EMAILS=you@example.com bash /opt/botly/app/scripts/install-local.sh

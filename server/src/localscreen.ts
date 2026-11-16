@@ -6,12 +6,12 @@ import { env } from './env.js';
 import type { OrgoComputer, OrgoScreen } from './orgo.js';
 
 /**
- * Screens on this machine, for running without Orgo (HQ_SCREENS=local).
+ * Screens on this machine, for running without Orgo (BOTLY_SCREENS=local).
  *
  * Every screen is an X display: Xvfb draws it, a small window manager keeps windows in place, and
  * x11vnc serves it on 127.0.0.1 only (the VNC relay in vnc.ts is the one way in from outside).
  * The default screen is :99; extra screens are :100, :101, ... — the same numbering Orgo uses,
- * so desk.ts, box.ts and hq-screen.py work unchanged.
+ * so desk.ts, box.ts and botly-screen.py work unchanged.
  */
 
 export const LOCAL_ID = 'local';
@@ -64,7 +64,7 @@ function ensureDisplay(n: number): Promise<void> {
   const p = (async () => {
     fs.mkdirSync(stateDir(), { recursive: true, mode: 0o700 });
     if (!(await alive(n))) {
-      const [w, h] = ((process.env.BOTLY_SCREEN_SIZE ?? process.env.HQ_SCREEN_SIZE) ?? '1280x800').split('x');
+      const [w, h] = ((process.env.BOTLY_SCREEN_SIZE ?? process.env.BOTLY_SCREEN_SIZE) ?? '1280x800').split('x');
       detached('Xvfb', [`:${n}`, '-screen', '0', `${w}x${h}x24`, '-nolisten', 'tcp', '-ac']);
       for (let i = 0; i < 50 && !(await alive(n)); i++) await new Promise((r) => setTimeout(r, 200));
       if (!(await alive(n))) throw new Error(`screen :${n} did not start (is Xvfb installed?)`);

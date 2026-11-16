@@ -19,7 +19,7 @@ Runs **without Orgo or any paid key**. Branch: **`free-edition`**.
 ## Server
 
 The paths below apply after the [one-time migration](BOTLY-MIGRATION.md). Check the running checkout before using these paths.
-- AWS EC2 `bot-hq` (AWS instance name), eu region, **t4g.small (ARM, 2 GB) + 4 GB swap**, Ubuntu 24.04, AWS free-plan credits.
+- AWS EC2 instance (eu region), **t4g.small (ARM, 2 GB) + 4 GB swap**, Ubuntu 24.04, AWS free-plan credits.
 - Address: `https://<public-ip-with-dashes>.sslip.io` (Caddy, Let's Encrypt). `scripts/refresh-address.sh` runs at
   boot (systemd `botly-address`) and follows a new IP after stop/start.
 - Max 2 bots (memory). `MAX_BOTS` in `/opt/botly/app/.env`.
@@ -62,7 +62,7 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
   `note` handed to the bot on its next turn (merged chat content, or what a heartbeat posted). Routes
   `GET /api/bots/:id/chats`, `POST /api/bots/:id/chats/:gen/{open|rename|archive|unarchive|delete|merge}`.
   UI: `web/src/components/ChatsPanel.tsx` (Chats button in the chat header; clicking the open bot again).
-  Hermes keeps one conversation per chat (`hq-<bot>-g<gen>`), so reopening an old chat keeps its context.
+  Hermes keeps one conversation per chat (`hq-<bot>-g<gen>`; the prefix is the key existing chats are stored under, so it stays), so reopening an old chat keeps its context.
 - **Heartbeat** (`server/src/heartbeat.ts`): bots with `heartbeat_min` ≥ 30 check their checklist; replying
   `HEARTBEAT_OK` (or stay_silent) removes the check-in's rows from the chat. Quiet 22:00–07:00 user time by default.
   Uses its own daily Hermes thread (`hq-<bot>-hb-<date>`). Tool `set_heartbeat`; settings in Bot settings → General.

@@ -38,7 +38,7 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
 ${who}
 
 ## The app's tools
-The app gives you extra tools through its MCP server "hq"; their names carry that prefix (save_file appears as mcp_hq_save_file or mcp__hq__save_file).
+The app gives you extra tools through its MCP server "botly"; their names carry that prefix (save_file appears as mcp_botly_save_file or mcp__botly__save_file).
 ${hasComposio ? `- Connected apps (Gmail, Calendar, Slack, GitHub, Notion and many more): find the right action with COMPOSIO_SEARCH_TOOLS, then run it with COMPOSIO_MULTI_EXECUTE_TOOL. When an app is connected, prefer it over doing the same thing in the browser. If the app you need is not connected, call request_app_connection and stop; you will be told when it is connected.
 - Some actions in connected apps wait for ${owner} to approve them. The tool call simply takes longer and then returns. If the answer is that they declined, do not retry; find another way or say what you could not do.
 ` : `- Connected apps are switched off on this install: never call request_app_connection. For Gmail, Facebook, Instagram, TikTok and every other site, use the browser on your own screen. ${owner} signs in there for you; never ask for passwords or codes in chat. If a site needs a login you don't have, ask ${owner} to sign in on your screen (they open it in the app and take control), then carry on.

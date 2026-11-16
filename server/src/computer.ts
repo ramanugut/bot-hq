@@ -263,7 +263,7 @@ export async function suspendComputer(userId: string, _reason = 'manual'): Promi
 // ---------------------------------------------------------------- sleeping screens
 
 /**
- * A bot's screen falls asleep after HQ_SCREEN_SLEEP_MIN idle minutes (15 by default): its browser and
+ * A bot's screen falls asleep after BOTLY_SCREEN_SLEEP_MIN idle minutes (15 by default): its browser and
  * desktop apps are closed, which frees most of the memory a screen uses. Logins stay in the browser
  * profile. Work wakes it again: every turn (chat, routine, heartbeat) calls screenForWork, and opening
  * the screen in the app wakes it too. The blank display itself keeps running; it costs very little,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hq-home: the home screen every Chrome on this computer shows on a new tab.
+"""botly-home: the home screen every Chrome on this computer shows on a new tab.
 
 One small server on 127.0.0.1 serves a different page to each screen. It works out who is asking
 from the TCP connection: source port -> owning process -> that Chrome's profile folder (one per
@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import hqlib  # noqa: E402
+import botlylib  # noqa: E402
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'home.html')
 
@@ -54,7 +54,7 @@ def _socket_inode(client_port):
                         rport = int(remote.rsplit(':', 1)[1], 16)
                     except (IndexError, ValueError):
                         continue
-                    if lport == client_port and rport == hqlib.HOME_PORT and parts[9] != '0':
+                    if lport == client_port and rport == botlylib.HOME_PORT and parts[9] != '0':
                         return parts[9]
         except OSError:
             continue
@@ -64,8 +64,8 @@ def _socket_inode(client_port):
 def _holder_of(inode):
     """Pid of a process that holds this socket. Chrome's network process owns its sockets."""
     needle = 'socket:[%s]' % inode
-    pids = hqlib.all_pids()
-    browsers = [p for p in pids if 'chrom' in hqlib.comm(p).lower()]
+    pids = botlylib.all_pids()
+    browsers = [p for p in pids if 'chrom' in botlylib.comm(p).lower()]
     for group in (browsers, [p for p in pids if p not in browsers]):
         for pid in group:
             fd_dir = '/proc/%d/fd' % pid
@@ -86,37 +86,37 @@ def _describe(pid):
     profile, display, main = None, None, None
     seen = 0
     while pid and pid > 1 and seen < 6:
-        args = hqlib.cmdline(pid)
+        args = botlylib.cmdline(pid)
         if args and 'chrom' in os.path.basename(args[0]).lower() and not any(a.startswith('--type=') for a in args):
             main = pid
         if display is None:
-            display = hqlib._marked_screen(args)
+            display = botlylib._marked_screen(args)
         if profile is None:
             for a in args:
                 if a.startswith('--user-data-dir='):
                     profile = a.split('=', 1)[1].rstrip('/')
                     break
         if display is None:
-            display = hqlib.display_number(hqlib.environ_of(pid).get('DISPLAY'))
+            display = botlylib.display_number(botlylib.environ_of(pid).get('DISPLAY'))
         if profile is not None and display is not None:
             break
-        pid = hqlib.ppid(pid)
+        pid = botlylib.ppid(pid)
         seen += 1
     if display is None and main:
         # Chrome wipes its environment; find the screen it has a window on (dressed screens only).
-        display = hqlib.x_display_of(main, sorted(_screens()))
+        display = botlylib.x_display_of(main, sorted(_screens()))
     return profile, display
 
 
 def _screens():
     out = {}
     try:
-        names = os.listdir(hqlib.SCREENS)
+        names = os.listdir(botlylib.SCREENS)
     except OSError:
         return out
     for name in names:
         if name.isdigit():
-            look = hqlib.look_for(int(name))
+            look = botlylib.look_for(int(name))
             if look:
                 out[int(name)] = look
     return out
@@ -141,7 +141,7 @@ def screen_for_client(client_port):
             for old in [k for k, v in _owner_cache.items() if now - v[0] > 60]:
                 _owner_cache.pop(old, None)
     screens = _screens()
-    if profile and profile.startswith(hqlib.PROFILES + '/'):
+    if profile and profile.startswith(botlylib.PROFILES + '/'):
         bot_id = os.path.basename(profile)
         for n, look in screens.items():
             if (look.get('bot') or {}).get('id') == bot_id:
@@ -167,7 +167,7 @@ def find_icon(name):
     if name.startswith('/'):
         found = name if os.path.isfile(name) else None
     else:
-        themes = [hqlib.icon_theme(), 'Papirus', 'hicolor', 'Adwaita', 'gnome', 'elementary-xfce', 'Humanity']
+        themes = [botlylib.icon_theme(), 'Papirus', 'hicolor', 'Adwaita', 'gnome', 'elementary-xfce', 'Humanity']
         roots = ['/usr/share/icons', os.path.expanduser('~/.local/share/icons'), '/usr/local/share/icons']
         for root in roots:
             for theme in themes:
@@ -212,7 +212,7 @@ def letter_icon(label, accent):
 # ---------------------------------------------------------------- pages
 
 def render_home(look):
-    template = hqlib.read_text(TEMPLATE)
+    template = botlylib.read_text(TEMPLATE)
     if not template:
         return '<!doctype html><title>Home</title><body style="font-family:sans-serif">Home</body>'
     colors = dict(NEUTRAL['colors'])
@@ -233,7 +233,7 @@ def render_home(look):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'hq-home'
+    server_version = 'botly-home'
     protocol_version = 'HTTP/1.1'
 
     def log_message(self, fmt, *args):  # quiet: one line per error only
@@ -263,7 +263,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _look(self, query):
         n = self._screen(query)
-        look = hqlib.look_for(n) if n is not None else None
+        look = botlylib.look_for(n) if n is not None else None
         return n, (look or NEUTRAL)
 
     def do_GET(self):
@@ -278,10 +278,10 @@ class Handler(BaseHTTPRequestHandler):
                 n, look = self._look(query)
                 self._json(200, {'stamp': str(look.get('stamp') or ''), 'screen': n})
             elif path == '/apps':
-                apps = [{'id': a['id'], 'name': a['name'], 'kind': a['kind']} for a in hqlib.list_apps()]
+                apps = [{'id': a['id'], 'name': a['name'], 'kind': a['kind']} for a in botlylib.list_apps()]
                 self._json(200, {'apps': apps})
             elif path == '/icon':
-                app = hqlib.find_app((query.get('id') or [''])[0])
+                app = botlylib.find_app((query.get('id') or [''])[0])
                 icon = find_icon(app['icon']) if app else None
                 if icon:
                     with open(icon, 'rb') as f:
@@ -295,14 +295,14 @@ class Handler(BaseHTTPRequestHandler):
                 _, look = self._look(query)
                 self._send(200, look.get('avatarSvg') or NEUTRAL['avatarSvg'], 'image/svg+xml', 'max-age=60')
             elif path == '/ext/updates.xml':
-                data = hqlib.read_text(hqlib.EXT + '/updates.xml')
+                data = botlylib.read_text(botlylib.EXT + '/updates.xml')
                 if data is None:
                     self._send(404, 'not built', 'text/plain')
                 else:
                     self._send(200, data, 'application/xml')
             elif path == '/ext/home.crx':
                 try:
-                    with open(hqlib.EXT + '/home.crx', 'rb') as f:
+                    with open(botlylib.EXT + '/home.crx', 'rb') as f:
                         self._send(200, f.read(), 'application/x-chrome-extension')
                 except OSError:
                     self._send(404, 'not built', 'text/plain')
@@ -331,7 +331,7 @@ class Handler(BaseHTTPRequestHandler):
         # Only our own page may launch apps: a same-origin fetch that carries our custom header.
         site = self.headers.get('Sec-Fetch-Site')
         origin = self.headers.get('Origin')
-        if self.headers.get('X-HQ') != '1' or (site and site != 'same-origin') or (origin and origin != hqlib.HOME_URL):
+        if '1' not in (self.headers.get('X-Botly'), self.headers.get('X-HQ')) or (site and site != 'same-origin') or (origin and origin != botlylib.HOME_URL):
             self._json(403, {'ok': False, 'error': 'forbidden'})
             return
         try:
@@ -339,11 +339,11 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             app_id = ''
         n = screen_for_client(self.client_address[1])
-        if n is None or not hqlib.find_app(app_id):
+        if n is None or not botlylib.find_app(app_id):
             self._json(404, {'ok': False, 'error': 'unknown app or screen'})
             return
         try:
-            hqlib.launch_app(n, app_id)
+            botlylib.launch_app(n, app_id)
             self._json(200, {'ok': True})
         except Exception as e:
             sys.stderr.write('launch %s on %s failed: %r\n' % (app_id, n, e))
@@ -351,10 +351,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = ThreadingHTTPServer(('127.0.0.1', hqlib.HOME_PORT), Handler)
+    server = ThreadingHTTPServer(('127.0.0.1', botlylib.HOME_PORT), Handler)
     server.daemon_threads = True
-    hqlib.write_atomic(hqlib.ROOT + '/home.pid', str(os.getpid()))
-    sys.stderr.write('%s hq-home listening on %s\n' % (time.strftime('%F %T'), hqlib.HOME_URL))
+    botlylib.write_atomic(botlylib.ROOT + '/home.pid', str(os.getpid()))
+    sys.stderr.write('%s botly-home listening on %s\n' % (time.strftime('%F %T'), botlylib.HOME_URL))
     sys.stderr.flush()
     server.serve_forever()
 

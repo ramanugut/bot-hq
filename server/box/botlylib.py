@@ -1,7 +1,7 @@
-"""Shared helpers for the hq desk scripts (hq-screen.py, hq-home.py, hq-shell.py).
+"""Shared helpers for the Botly desk scripts (botly-screen.py, botly-home.py, botly-shell.py).
 
 Everything here is per X display: display :N is "screen N". Whatever we start for a screen carries
-HQ_SCREEN=N in its environment, which is how we find it again later.
+BOTLY_SCREEN=N in its environment, which is how we find it again later.
 """
 import configparser
 import json
@@ -22,10 +22,13 @@ LOGS = '/var/log/botly'
 PROFILES = '/root/botly/profiles'
 HOME_PORT = 7391
 HOME_URL = 'http://127.0.0.1:%d' % HOME_PORT
-BROWSER_CLASS = 'HQBrowser'
-SCREEN_FLAG = '--hq-screen'
-SHELL_CLASS = 'HQShell'
-DESKTOP_CLASSES = ('xfce4-panel', 'xfdesktop', 'hq-shell', 'hqshell')
+BROWSER_CLASS = 'BotlyBrowser'
+SCREEN_FLAG = '--botly-screen'
+# Names used before the rename: still recognised, so screens already running are found and replaced.
+OLD_SCREEN_FLAG = '--hq-screen'
+OLD_BROWSER_CLASS = 'HQBrowser'
+SHELL_CLASS = 'BotlyShell'
+DESKTOP_CLASSES = ('xfce4-panel', 'xfdesktop', 'botly-shell', 'botlyshell', 'hq-shell', 'hqshell')
 APP_DIRS = (
     '/usr/share/applications',
     '/usr/local/share/applications',
@@ -162,9 +165,9 @@ def display_procs(n, names):
 
 
 def marked_pids(n):
-    """Everything we started for screen n (carries HQ_SCREEN=n)."""
+    """Everything we started for screen n (carries BOTLY_SCREEN=n)."""
     me = os.getpid()
-    return [pid for pid in all_pids() if pid != me and environ_of(pid).get('HQ_SCREEN') == str(int(n))]
+    return [pid for pid in all_pids() if pid != me and str(int(n)) in (environ_of(pid).get('BOTLY_SCREEN'), environ_of(pid).get('HQ_SCREEN'))]
 
 
 def stop_pids(pids, grace=4.0):
@@ -273,7 +276,7 @@ def base_env(n):
         'USER': os.environ.get('USER') or 'root',
         'LANG': os.environ.get('LANG') or 'C.UTF-8',
         'DISPLAY': ':%d' % int(n),
-        'HQ_SCREEN': str(int(n)),
+        'BOTLY_SCREEN': str(int(n)),
         'GTK_THEME': light_theme(),
         'XDG_CURRENT_DESKTOP': 'XFCE',
         'NO_AT_BRIDGE': '1',
@@ -372,7 +375,7 @@ def is_desktop_piece(win):
 
 def is_browser_window(win):
     cls = win['cls'].lower()
-    if 'chrom' in cls or BROWSER_CLASS.lower() in cls:
+    if 'chrom' in cls or BROWSER_CLASS.lower() in cls or OLD_BROWSER_CLASS.lower() in cls:
         return True
     name = os.path.basename((cmdline(win['pid']) or [''])[0]) if win['pid'] else ''
     return 'chrome' in name or 'chromium' in name
@@ -702,7 +705,7 @@ def _user_data_dir(args):
 
 def _marked_screen(args):
     for a in args:
-        if a.startswith(SCREEN_FLAG + '='):
+        if a.startswith(SCREEN_FLAG + '=') or a.startswith(OLD_SCREEN_FLAG + '='):
             return display_number(':' + a.split('=', 1)[1])
     return None
 
@@ -846,7 +849,7 @@ def prepare_profile(bot_id, accent=None):
 def browser_windows(n, pid=None):
     wins = [w for w in windows(n) if not is_desktop_piece(w) and is_browser_window(w)]
     if pid:
-        mine = [w for w in wins if w['pid'] == pid or BROWSER_CLASS.lower() in w['cls'].lower()]
+        mine = [w for w in wins if w['pid'] == pid or BROWSER_CLASS.lower() in w['cls'].lower() or OLD_BROWSER_CLASS.lower() in w['cls'].lower()]
         return mine
     return wins
 

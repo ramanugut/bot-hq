@@ -83,5 +83,5 @@ const orgoApi = {
     call<{ url?: string; file?: { id: string; url?: string; filename?: string }; [k: string]: unknown }>('POST', '/files/export', { desktopId: id, path }, { timeoutMs: 180_000 }),
 };
 
-/** Orgo's API, or this machine's own screens when running without Orgo (HQ_SCREENS=local). */
+/** Orgo's API, or this machine's own screens when running without Orgo (BOTLY_SCREENS=local). */
 export const orgo: typeof orgoApi = env.localScreens ? (localScreens as unknown as typeof orgoApi) : orgoApi;

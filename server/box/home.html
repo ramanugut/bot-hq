@@ -126,7 +126,7 @@
     }
     fetch('/launch', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-HQ': '1' },
+      headers: { 'Content-Type': 'application/json', 'X-Botly': '1' },
       body: JSON.stringify({ id: app.id })
     }).then(function (r) { return r.json(); }).then(function (r) {
       say(r && r.ok ? 'Opening ' + app.name : 'Could not open ' + app.name);

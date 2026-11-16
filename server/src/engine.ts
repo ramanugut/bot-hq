@@ -207,7 +207,7 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   cfg.platform_toolsets = { ...(cfg.platform_toolsets ?? {}), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
   cfg.terminal = { ...(cfg.terminal ?? {}), cwd };
   // Nobody can answer Hermes' own approval prompts through the app, so a prompt would only time out.
-  // HQ_AGENT_APPROVALS=off lets bots act on their own screen (Hermes' hard blocks still apply).
+  // BOTLY_AGENT_APPROVALS=off lets bots act on their own screen (Hermes' hard blocks still apply).
   if (env.agentApprovals) cfg.approvals = { ...(cfg.approvals ?? {}), mode: env.agentApprovals };
   if (cdp) cfg.browser = { ...(cfg.browser ?? {}), cdp_url: cdp };
   const existingMcp = { ...(cfg.mcp_servers ?? {}) };

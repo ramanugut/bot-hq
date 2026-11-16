@@ -10,19 +10,19 @@ import { box, displayFor } from './box.js';
  *
  * The work on the computer is done by the scripts in server/box/, which this file installs under
  * /opt/botly and then calls with one short command per action. Only `box.*` is used to reach the
- * computer, so it works the same through Orgo's API and with HQ_LOCAL=1.
+ * computer, so it works the same through Orgo's API and with BOTLY_LOCAL=1.
  */
 
 export interface DeskBot { id: string; name: string; label: string; avatarShape: string; avatarColor: string }
 
 const ROOT = '/opt/botly';
-const SCRIPT = `${ROOT}/hq-screen.py`;
+const SCRIPT = `${ROOT}/botly-screen.py`;
 /** Source file under server/box/ -> where it lives under /opt/botly on the computer. */
 const BOX_FILES: Record<string, string> = {
-  'hqlib.py': 'hqlib.py',
-  'hq-screen.py': 'hq-screen.py',
-  'hq-shell.py': 'hq-shell.py',
-  'hq-home.py': 'hq-home.py',
+  'botlylib.py': 'botlylib.py',
+  'botly-screen.py': 'botly-screen.py',
+  'botly-shell.py': 'botly-shell.py',
+  'botly-home.py': 'botly-home.py',
   'home.html': 'home.html',
   'ext/manifest.json': 'ext/src/manifest.json',
   'ext/newtab.html': 'ext/src/newtab.html',
@@ -64,15 +64,15 @@ interface Reply { kind: 'OK' | 'DONE' | 'RUNNING' | 'NOBASE' | 'BASE_OK' | 'NONE
 function parseReply(output: string): Reply {
   const lines = output.split('\n').map((l) => l.trim()).filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i--) {
-    const m = /^HQ_(OK|DONE|RUNNING|NOBASE|BASE_OK)\b ?(.*)$/.exec(lines[i]);
+    const m = /^BOTLY_(OK|DONE|RUNNING|NOBASE|BASE_OK)\b ?(.*)$/.exec(lines[i]);
     if (m) return { kind: m[1] as Reply['kind'], rest: m[2], raw: output };
   }
   return { kind: 'NONE', rest: '', raw: output };
 }
 
-/** One call to hq-screen.py. A missing or failing script answers NOBASE so the caller can install it. */
+/** One call to botly-screen.py. A missing or failing script answers NOBASE so the caller can install it. */
 async function script(args: string[], screenId?: string, timeoutSec = 60): Promise<Reply> {
-  const cmd = `[ -f ${SCRIPT} ] && python3 ${SCRIPT} ${args.map(box.quote).join(' ')} 2>&1 || echo HQ_NOBASE`;
+  const cmd = `[ -f ${SCRIPT} ] && python3 ${SCRIPT} ${args.map(box.quote).join(' ')} 2>&1 || echo BOTLY_NOBASE`;
   const r = await box.bash(cmd, timeoutSec, screenId);
   return parseReply(r.output);
 }
@@ -123,10 +123,10 @@ async function setupBase(): Promise<void> {
     "    if 'ext/src/' + name not in files:",
     '        os.unlink(os.path.join(src, name))',
     "os.unlink(root + '/bundle.json.gz')",
-    "print('HQ_UNPACKED')",
+    "print('BOTLY_UNPACKED')",
   ].join('\n');
   const r = await box.bash(`python3 -c ${box.quote(unpack)} 2>&1`, 60);
-  if (!r.output.includes('HQ_UNPACKED')) {
+  if (!r.output.includes('BOTLY_UNPACKED')) {
     throw new Error(`could not install the desktop scripts on the computer (python3 is needed): ${r.output.trim().slice(-300)}`);
   }
   // Package installs can take a while on a fresh computer.

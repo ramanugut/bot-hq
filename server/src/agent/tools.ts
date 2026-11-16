@@ -210,8 +210,8 @@ export const TOOLS: ToolDef[] = [
         target = libraryReadPath(ctx.botId, src);
         if (fs.statSync(target).size > 25 * 1024 * 1024) return { output: 'This file is larger than the 25 MB document limit.' };
       } catch { return { output: 'Document not found in your Library, or access denied.' }; }
-      const r = await box.bash(`command -v markitdown >/dev/null || { echo HQ_NO_MARKITDOWN; exit 3; }; markitdown ${box.quote(target)} 2>&1`, 180);
-      if (r.output.includes('HQ_NO_MARKITDOWN')) return { output: 'Document reading is not installed on this server yet (run scripts/update.sh on the server). Try pdftotext or pandoc in the terminal meanwhile.' };
+      const r = await box.bash(`command -v markitdown >/dev/null || { echo BOTLY_NO_MARKITDOWN; exit 3; }; markitdown ${box.quote(target)} 2>&1`, 180);
+      if (r.output.includes('BOTLY_NO_MARKITDOWN')) return { output: 'Document reading is not installed on this server yet (run scripts/update.sh on the server). Try pdftotext or pandoc in the terminal meanwhile.' };
       if (r.exit_code !== 0) return { output: `Could not read ${src}: ${r.output.trim().slice(-600)}` };
       const text = r.output.trim();
       if (!text) return { output: `${src} has no text in it (a scanned PDF needs OCR; say so to the user).` };
@@ -806,13 +806,13 @@ export async function runComposioTool(ctx: ToolCtx, name: string, args: any): Pr
   return { output: out, summary: ok ? 'done' : 'failed' };
 }
 
-/** A Hermes tool name as the app knows it: tools served by this app's MCP server lose their `mcp_hq_` prefix. */
+/** A Hermes tool name as the app knows it: tools served by this app's MCP server lose their `mcp_botly_` prefix (`mcp_hq_` on older installs). */
 export function appToolName(raw: string): { name: string; ours: boolean; server?: string } {
-  const hq = /^mcp_+hq_+(.+)$/.exec(raw);
-  if (hq) {
+  const ours = /^mcp_+(?:botly|hq)_+(.+)$/.exec(raw);
+  if (ours) {
     // Hermes may fold names to lower case; ours are matched case-insensitively.
-    const hit = [...toolMap.keys()].find((k) => k.toLowerCase() === hq[1].toLowerCase());
-    return { name: hit ?? (/^composio_/i.test(hq[1]) ? hq[1].toUpperCase() : hq[1]), ours: true };
+    const hit = [...toolMap.keys()].find((k) => k.toLowerCase() === ours[1].toLowerCase());
+    return { name: hit ?? (/^composio_/i.test(ours[1]) ? ours[1].toUpperCase() : ours[1]), ours: true };
   }
   const other = /^mcp_+([a-zA-Z0-9-]+?)_+(.+)$/.exec(raw);
   if (other) return { name: other[2], ours: false, server: other[1] };

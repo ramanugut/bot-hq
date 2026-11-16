@@ -105,7 +105,7 @@ The app is meant to run on the same Orgo computer as Hermes.
 On the computer:
 
 ```bash
-python3 /opt/botly/hq-screen.py undress 99                      # main screen back to how it was (99 = its X display)
+python3 /opt/botly/botly-screen.py undress 99                      # main screen back to how it was (99 = its X display)
 python3 /opt/botly/app/scripts/add-botly-to-hermes.py --remove     # take the tools out of Hermes
 supervisorctl stop botly-app && supervisorctl remove botly-app
 rm -rf /etc/supervisor/conf.d/botly-app.conf /opt/botly /var/log/botly /root/botly /etc/opt/chrome/policies/managed/botly.json
@@ -120,8 +120,8 @@ Then delete the public URL in Orgo. Screens of the other bots are released when 
 You need **Node.js 22 or newer** and a Hermes gateway with its API server on (`API_SERVER_KEY` in `~/.hermes/.env`).
 
 ```bash
-git clone https://github.com/ramanugut/bot-hq.git
-cd bot-hq
+git clone https://github.com/ramanugut/botly.git
+cd botly
 npm ci
 cp .env.example .env      # fill in the keys; comments in the file explain each one
 npm run dev -w server     # API on :8787

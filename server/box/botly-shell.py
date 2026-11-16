@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hq-shell N: the desktop pieces of screen N. One process per X display.
+"""botly-shell N: the desktop pieces of screen N. One process per X display.
 
 It paints the wallpaper described in /opt/botly/screens/N/look.json (through xfdesktop where that runs,
 in a desktop window of its own on a bare display) and shows a small dock with Browser, Terminal and
@@ -13,7 +13,7 @@ import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import hqlib  # noqa: E402
+import botlylib  # noqa: E402
 
 import gi  # noqa: E402
 gi.require_version('Gtk', '3.0')
@@ -23,7 +23,7 @@ from gi.repository import Gdk, GdkPixbuf, GLib, Gtk  # noqa: E402
 import cairo  # noqa: E402
 
 N = int(sys.argv[1])
-DIR = hqlib.screen_dir(N)
+DIR = botlylib.screen_dir(N)
 LOOK = DIR + '/look.json'
 
 ICON = 44          # dock icon size
@@ -93,7 +93,7 @@ class Shell:
             g = display.get_monitor(i).get_geometry()
             w, h = max(w, g.x + g.width), max(h, g.y + g.height)
         if not w or not h:
-            geo = hqlib.geometry(N)
+            geo = botlylib.geometry(N)
             w, h = geo if geo else (1280, 720)
         return w, h
 
@@ -111,13 +111,13 @@ class Shell:
 
     def guard(self):
         try:
-            hqlib_hide_panel_strips()
+            botlylib_hide_panel_strips()
         except Exception as e:
             log('guard failed:', repr(e))
         return True
 
     def refresh(self, force=False):
-        look = hqlib.look_for(N)
+        look = botlylib.look_for(N)
         if not look:
             return False
         try:
@@ -133,7 +133,7 @@ class Shell:
             self.show_wall()
             self.rebuild_dock()
             log('applied look %s at %dx%d in %.2fs' % (str(look.get('stamp'))[:10], size[0], size[1], time.time() - started))
-        hqlib.write_json(DIR + '/shell.json', {
+        botlylib.write_json(DIR + '/shell.json', {
             'pid': os.getpid(), 'stamp': look.get('stamp'), 'width': size[0], 'height': size[1],
             'wallpaper': 'xfdesktop' if self.uses_xfdesktop else 'window',
             'composited': bool(self.screen.is_composited()),
@@ -170,7 +170,7 @@ class Shell:
     # ------------------------------------------------------------ wallpaper
 
     def show_wall(self):
-        self.uses_xfdesktop = bool(hqlib.display_procs(N, ('xfdesktop',)))
+        self.uses_xfdesktop = bool(botlylib.display_procs(N, ('xfdesktop',)))
         if self.uses_xfdesktop:
             if self.wall_win:
                 self.wall_win.destroy()
@@ -182,7 +182,7 @@ class Shell:
         if not self.wall_win:
             win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
             win.set_title('Desktop')
-            win.set_wmclass('hq-shell', hqlib.SHELL_CLASS)
+            win.set_wmclass('botly-shell', botlylib.SHELL_CLASS)
             win.set_type_hint(Gdk.WindowTypeHint.DESKTOP)
             win.set_decorated(False)
             win.set_accept_focus(False)
@@ -209,29 +209,29 @@ class Shell:
     def hand_to_xfdesktop(self, pixbuf, size, stamp):
         """xfdesktop owns the root window here, so give it our picture instead of covering it."""
         try:
-            env = hqlib.screen_env(N)
+            env = botlylib.screen_env(N)
             name = 'wall-%s-%dx%d.png' % (stamp[:12], size[0], size[1])
             path = '%s/%s' % (DIR, name)
             pixbuf.savev(path + '.tmp', 'png', ['compression'], ['3'])
             os.replace(path + '.tmp', path)
-            code, out = hqlib.run(['xfconf-query', '-c', 'xfce4-desktop', '-l'], env=env)
+            code, out = botlylib.run(['xfconf-query', '-c', 'xfce4-desktop', '-l'], env=env)
             props = [p.strip() for p in out.splitlines() if p.strip().startswith('/backdrop/')] if code == 0 else []
             images = [p for p in props if p.endswith('/last-image')]
             if not images:
                 images = ['/backdrop/screen0/monitor0/workspace0/last-image']
             saved_path = DIR + '/backdrop.json'
-            saved = hqlib.read_json(saved_path)
+            saved = botlylib.read_json(saved_path)
             if saved is None:
                 saved = {}
                 for prop in images:
-                    c, v = hqlib.run(['xfconf-query', '-c', 'xfce4-desktop', '-p', prop], env=env)
+                    c, v = botlylib.run(['xfconf-query', '-c', 'xfce4-desktop', '-p', prop], env=env)
                     if c == 0 and DIR not in v:
                         saved[prop] = v.strip()
-                hqlib.write_json(saved_path, saved)
+                botlylib.write_json(saved_path, saved)
             for prop in images:
-                hqlib.run(['xfconf-query', '-c', 'xfce4-desktop', '-p', prop, '-n', '-t', 'string', '-s', path], env=env)
+                botlylib.run(['xfconf-query', '-c', 'xfce4-desktop', '-p', prop, '-n', '-t', 'string', '-s', path], env=env)
                 style = prop[:-len('last-image')] + 'image-style'
-                hqlib.run(['xfconf-query', '-c', 'xfce4-desktop', '-p', style, '-n', '-t', 'int', '-s', '3'], env=env)
+                botlylib.run(['xfconf-query', '-c', 'xfce4-desktop', '-p', style, '-n', '-t', 'int', '-s', '3'], env=env)
             for old in os.listdir(DIR):
                 if old.startswith('wall-') and old.endswith('.png') and old != name:
                     try:
@@ -245,7 +245,7 @@ class Shell:
 
     def load_icons(self):
         theme = Gtk.IconTheme()
-        theme.set_custom_theme(hqlib.icon_theme())
+        theme.set_custom_theme(botlylib.icon_theme())
         fallback = Gtk.IconTheme.get_default()
         self.icons = []
         for _action, _label, names in DOCK_ITEMS:
@@ -274,7 +274,7 @@ class Shell:
         win_w, win_h, pill_w, pill_h = self.dock_geometry()
         win = Gtk.Window(type=Gtk.WindowType.TOPLEVEL)
         win.set_title('Dock')
-        win.set_wmclass('hq-shell', hqlib.SHELL_CLASS)
+        win.set_wmclass('botly-shell', botlylib.SHELL_CLASS)
         win.set_type_hint(Gdk.WindowTypeHint.DOCK)
         win.set_decorated(False)
         win.set_resizable(False)
@@ -396,19 +396,19 @@ class Shell:
 
     def launch(self, action):
         try:
-            hqlib.launch_app(N, action)
+            botlylib.launch_app(N, action)
             log('opened', action)
         except Exception as e:
             log('could not open %s:' % action, repr(e))
 
 
-def hqlib_hide_panel_strips():
-    hqlib.hide_panel_strips(N)
+def botlylib_hide_panel_strips():
+    botlylib.hide_panel_strips(N)
 
 
 def main():
-    GLib.set_prgname('hq-shell')
-    Gdk.set_program_class(hqlib.SHELL_CLASS)
+    GLib.set_prgname('botly-shell')
+    Gdk.set_program_class(botlylib.SHELL_CLASS)
     settings = Gtk.Settings.get_default()
     if settings:
         settings.set_property('gtk-application-prefer-dark-theme', False)
