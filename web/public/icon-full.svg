@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="256" cy="210" r="420" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1A1D2B"/>
+      <stop offset="1" stop-color="#06070B"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="120" y1="110" x2="400" y2="410" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#A9F7DA"/>
+      <stop offset="0.35" stop-color="#8FD3F7"/>
+      <stop offset="0.7" stop-color="#B9A2F7"/>
+      <stop offset="1" stop-color="#FFB3C9"/>
+    </linearGradient>
+    <radialGradient id="moon" cx="0.38" cy="0.32" r="0.75"><stop offset="0" stop-color="#FFF4EC"/><stop offset="1" stop-color="#FFAA8C"/></radialGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="20"/></filter>
+    <filter id="mglow" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="14"/></filter>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g transform="rotate(-16 256 262)">
+    <ellipse cx="256" cy="262" rx="140" ry="126" fill="none" stroke="url(#ring)" stroke-width="66" opacity="0.55" filter="url(#glow)"/>
+    <ellipse cx="256" cy="262" rx="140" ry="126" fill="none" stroke="url(#ring)" stroke-width="62"/>
+    <ellipse cx="256" cy="262" rx="140" ry="126" fill="none" stroke="#FFFFFF" stroke-opacity="0.35" stroke-width="6" stroke-dasharray="180 700" stroke-linecap="round" transform="translate(-6 -10)"/>
+  </g>
+  <circle cx="372" cy="138" r="40" fill="#FFAA8C" opacity="0.6" filter="url(#mglow)"/>
+  <circle cx="372" cy="138" r="34" fill="url(#moon)"/>
+</svg>
