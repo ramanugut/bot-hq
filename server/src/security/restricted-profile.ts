@@ -21,8 +21,7 @@ export const RESTRICTED_API_TOOLSETS = Object.freeze([
 
 export const DISABLED_DIRECT_TOOLSETS = Object.freeze([
   'terminal', 'browser', 'computer_use', 'file', 'code_execution',
-  'delegation', 'cronjob', 'skills', 'connections', 'debugging',
-  'coding', 'hermes-cli', 'hermes-api-server',
+  'delegation', 'cronjob', 'skills', 'connections',
 ] as const);
 
 export function restrictManagedProfile(config: Record<string, any>): void {
