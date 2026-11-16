@@ -23,6 +23,9 @@ function shellEnv(screenId?: string | null): NodeJS.ProcessEnv {
     USER: process.env.USER ?? 'root',
     LANG: process.env.LANG ?? 'C.UTF-8',
     DISPLAY: displayFor(screenId),
+    ...(env.x11Auth && env.localBox ? {
+      XAUTHORITY: path.join(path.dirname(env.dbPath), 'screens', `xauthority-${Number(displayFor(screenId).slice(1))}`),
+    } : {}),
   };
 }
 
