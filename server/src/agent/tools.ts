@@ -210,10 +210,12 @@ export const TOOLS: ToolDef[] = [
     activity: 'running_commands',
     label: 'Running an approved command',
     impl: async (a, ctx) => {
-      if (!env.restrictedAgents || getBotRow(ctx.botId)?.engine !== 'managed') return { output: 'Restricted, non-root managed-agent mode must be active before shell commands can run.' };
+      const kind = getBotRow(ctx.botId)?.engine;
+      const permitted = (kind === 'managed' && env.restrictedAgents) || (kind === 'primary' && env.restrictedPrimary);
+      if (!permitted) return { output: 'Restricted, non-root agent mode must be active before shell commands can run.' };
       auditRestricted(ctx.botId, 'approved_shell', 'started');
       try {
-        const r = await runApprovedCommand(ctx.botId, env.enginesDir, String(a.command ?? ''));
+        const r = await runApprovedCommand(ctx.botId, env.enginesDir, String(a.command ?? ''), 30_000, kind === 'primary' ? env.hermesHome : undefined);
         auditRestricted(ctx.botId, 'approved_shell', r.timedOut ? 'timeout' : r.exitCode === 0 ? 'success' : 'failure');
         return { output: `Exit code: ${r.exitCode ?? 'terminated'}${r.timedOut ? ' (timeout)' : ''}\n${r.output}`, summary: r.exitCode === 0 ? 'Command completed' : 'Command failed' };
       } catch (e: any) {
@@ -229,7 +231,8 @@ export const TOOLS: ToolDef[] = [
     activity: 'reading_web',
     label: 'Inspecting a browser page',
     impl: async (_a, ctx) => {
-      if (!env.restrictedAgents || getBotRow(ctx.botId)?.engine !== 'managed' || !env.localBox) return { output: 'Restricted local managed-agent browser mode is not active.' };
+      const kind = getBotRow(ctx.botId)?.engine;
+      if (!env.localBox || !((kind === 'managed' && env.restrictedAgents) || (kind === 'primary' && env.restrictedPrimary))) return { output: 'Restricted local browser mode is not active.' };
       await screenForWork(ctx.userId, ctx.botId);
       const s = await screenFor(ctx.userId, ctx.botId);
       return { output: await runBrowserAction(cdpUrlFor(ctx.botId, s.screenId), { action: 'inspect' }), summary: 'Read current browser page' };
@@ -248,7 +251,8 @@ export const TOOLS: ToolDef[] = [
     activity: 'browsing_web',
     label: 'Controlling an approved browser',
     impl: async (a, ctx) => {
-      if (!env.restrictedAgents || getBotRow(ctx.botId)?.engine !== 'managed' || !env.localBox) return { output: 'Restricted local managed-agent browser mode must be active.' };
+      const kind = getBotRow(ctx.botId)?.engine;
+      if (!env.localBox || !((kind === 'managed' && env.restrictedAgents) || (kind === 'primary' && env.restrictedPrimary))) return { output: 'Restricted local browser mode must be active.' };
       auditRestricted(ctx.botId, 'approved_browser_action', 'started');
       try {
         await screenForWork(ctx.userId, ctx.botId);
