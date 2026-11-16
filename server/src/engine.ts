@@ -7,6 +7,8 @@ import { displayFor } from './box.js';
 import { cdpUrlFor, screenFor } from './computer.js';
 import { db } from './db.js';
 import { env } from './env.js';
+import { agentUsername, assertSafeAgentFile, requireAgentIdentity } from './security/agent-identity.js';
+import { restrictManagedProfile } from './security/restricted-profile.js';
 import type { EngineInfo, EngineProvider } from './types.js';
 
 /**
@@ -46,10 +48,48 @@ function readYaml(file: string): any {
   try { return YAML.parse(fs.readFileSync(file, 'utf8')) ?? {}; } catch { return {}; }
 }
 
-function writePrivate(file: string, content: string) {
+function writePrivate(file: string, content: string, owner?: { uid: number; gid: number; home: string }) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, content, { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  if (owner) assertSafeAgentFile(file, owner.home);
+  // Atomic replacement prevents a managed bot from swapping a config path
+  // for a symlink while the privileged app is writing it.
+  const tmp = `${file}.${crypto.randomBytes(10).toString('hex')}.tmp`;
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+    fs.writeFileSync(fd, content);
+    if (owner) fs.fchownSync(fd, owner.uid, owner.gid);
+    fs.fchmodSync(fd, 0o600);
+    fs.closeSync(fd);
+    fd = undefined;
+    // Replacing a symlink does not follow it. All chmod/chown calls are on
+    // the open fd *before* rename, avoiding races with an agent-owned home.
+    fs.renameSync(tmp, file);
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    try { fs.unlinkSync(tmp); } catch { /* already renamed */ }
+  }
+}
+
+function assertRegularOrMissing(file: string) {
+  try {
+    const st = fs.lstatSync(file);
+    if (st.isSymbolicLink() || !st.isFile()) throw new Error('Unsafe non-regular managed-agent file');
+  } catch (e: any) {
+    if (e?.code !== 'ENOENT') throw e;
+  }
+}
+
+function assertRunningAgentIdentity(botId: string) {
+  if (!env.restrictedAgents) return;
+  const identity = requireAgentIdentity(botId, homeFor(botId));
+  const pid = gatewayPid(identity.home);
+  if (!pid) throw new Error('A restricted managed gateway must be started by Botly and verified before reuse');
+  const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+  const line = /^Uid:\s+(\d+)\s+(\d+)/m.exec(status);
+  if (!line || Number(line[2]) !== identity.uid) {
+    throw new Error('Refusing an existing managed gateway that is not running as its dedicated agent user');
+  }
 }
 
 // ---------- identity ----------
@@ -128,7 +168,10 @@ export function syncPersona(botId: string) {
   if (!b || b.engine !== 'managed' || b.soul_custom) return;
   const home = homeFor(botId);
   if (!fs.existsSync(home)) return;
-  fs.writeFileSync(path.join(home, 'SOUL.md'), soul(b));
+  const file = path.join(home, 'SOUL.md');
+  const owner = env.restrictedAgents ? requireAgentIdentity(botId, home) : undefined;
+  if (owner) { assertSafeAgentFile(file, home); assertRegularOrMissing(file); }
+  writePrivate(file, soul(b), owner);
 }
 
 // ---------- the soul (SOUL.md): who the bot is, editable in Bot settings ----------
@@ -146,6 +189,11 @@ export function readSoul(botId: string): { text: string; custom: boolean; sugges
   const suggested = b ? soul(b) : '';
   const file = soulFile(botId);
   let text = '';
+  if (file && env.restrictedAgents && b?.engine === 'managed') {
+    const home = homeFor(botId);
+    assertSafeAgentFile(file, home);
+    assertRegularOrMissing(file);
+  }
   try { if (file) text = fs.readFileSync(file, 'utf8'); } catch { /* not written yet */ }
   return { text: text || suggested, custom: !!b?.soul_custom, suggested };
 }
@@ -157,7 +205,10 @@ export function writeSoul(botId: string, text: string | null) {
   if (!b || !file) throw new Error('This bot has no engine yet; send it a message first.');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const body = text === null ? soul(b) : text.slice(0, SOUL_MAX);
-  fs.writeFileSync(file, body.endsWith('\n') ? body : `${body}\n`);
+  const home = homeFor(botId);
+  const owner = env.restrictedAgents && b.engine === 'managed' ? requireAgentIdentity(botId, home) : undefined;
+  if (owner) { assertSafeAgentFile(file, home); assertRegularOrMissing(file); }
+  writePrivate(file, body.endsWith('\n') ? body : `${body}\n`, owner);
   db.prepare('UPDATE bots SET soul_custom=? WHERE id=?').run(text === null ? 0 : 1, botId);
 }
 
@@ -176,9 +227,21 @@ function extraMcpServers(): Record<string, any> {
 async function writeHome(botId: string): Promise<{ home: string; key: string; display: string | null }> {
   const b = botRow(botId);
   const home = homeFor(botId);
+  // Require offline provisioning first. Never silently run a protected agent as root.
+  const identity = env.restrictedAgents ? requireAgentIdentity(botId, home) : undefined;
   fs.mkdirSync(path.join(home, 'logs'), { recursive: true });
   fs.mkdirSync(path.join(home, 'locks'), { recursive: true });
   fs.chmodSync(home, 0o700);
+  if (identity) {
+    for (const sub of ['logs', 'locks']) {
+      const dir = path.join(home, sub);
+      assertSafeAgentFile(path.join(dir, '.check'), home);
+      // Work on the opened directory, not on a path the bot could swap.
+      const fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      try { fs.fchownSync(fd, identity.uid, identity.gid); fs.fchmodSync(fd, 0o700); }
+      finally { fs.closeSync(fd); }
+    }
+  }
 
   // Its screen decides which display and which Chrome it drives. Only meaningful on the computer itself.
   let display: string | null = null;
@@ -193,10 +256,20 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
     }
   }
 
-  const cwd = env.localBox ? `/root/botly/files/${botId}` : path.join(home, 'workspace');
+  const cwd = identity ? path.join(home, 'workspace') : env.localBox ? `/root/botly/files/${botId}` : path.join(home, 'workspace');
   fs.mkdirSync(cwd, { recursive: true });
+  if (identity) {
+    assertSafeAgentFile(path.join(cwd, '.check'), home);
+    const fd = fs.openSync(cwd, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+    try { fs.fchownSync(fd, identity.uid, identity.gid); fs.fchmodSync(fd, 0o700); }
+    finally { fs.closeSync(fd); }
+  }
 
   const cfgFile = path.join(home, 'config.yaml');
+  if (identity) {
+    assertSafeAgentFile(cfgFile, home);
+    assertRegularOrMissing(cfgFile);
+  }
   const fresh = !fs.existsSync(cfgFile);
   const cfg = fresh ? {} : readYaml(cfgFile);
   if (fresh) {
@@ -214,21 +287,26 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   if (String(existingMcp.hq?.url ?? '').endsWith(`/mcp/${botId}`)) delete existingMcp.hq;
   cfg.mcp_servers = {
     ...existingMcp,
-    ...extraMcpServers(),
+    ...(identity ? {} : extraMcpServers()),
     botly: { url: `${env.mcpBaseUrl}/mcp/${botId}`, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
-  writePrivate(cfgFile, YAML.stringify(cfg));
+  if (identity) restrictManagedProfile(cfg);
+  writePrivate(cfgFile, YAML.stringify(cfg), identity);
 
-  if (!fs.existsSync(path.join(home, 'SOUL.md'))) fs.writeFileSync(path.join(home, 'SOUL.md'), soul(b));
+  const soulPath = path.join(home, 'SOUL.md');
+  if (identity) { assertSafeAgentFile(soulPath, home); assertRegularOrMissing(soulPath); }
+  if (!fs.existsSync(soulPath)) writePrivate(soulPath, soul(b), identity);
 
   // Subscription sign-ins live in auth.json. Start from the primary agent's; later sign-ins are this bot's own.
   const auth = path.join(home, 'auth.json');
+  if (identity) { assertSafeAgentFile(auth, home); assertRegularOrMissing(auth); }
   if (!fs.existsSync(auth)) {
-    try { writePrivate(auth, fs.readFileSync(path.join(env.hermesHome, 'auth.json'), 'utf8')); } catch { /* the primary agent has none */ }
+    try { writePrivate(auth, fs.readFileSync(path.join(env.hermesHome, 'auth.json'), 'utf8'), identity); } catch { /* the primary agent has none */ }
   }
 
   // .env is ours entirely: the API server plus inherited model keys. Keys the user added by hand are kept.
   const envFile = path.join(home, '.env');
+  if (identity) { assertSafeAgentFile(envFile, home); assertRegularOrMissing(envFile); }
   const mine = readDotenv(envFile);
   const key = mine.API_SERVER_KEY || crypto.randomBytes(24).toString('hex');
   const primaryEnv = readDotenv(path.join(env.hermesHome, '.env'));
@@ -238,8 +316,9 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
     if (v && !vars[k]) vars[k] = v;
   }
   Object.assign(vars, { API_SERVER_ENABLED: 'true', API_SERVER_KEY: key, API_SERVER_PORT: String(b.engine_port), API_SERVER_HOST: '127.0.0.1' });
-  if (cdp) vars.BROWSER_CDP_URL = cdp; else delete vars.BROWSER_CDP_URL;
-  writePrivate(envFile, Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n');
+  if (cdp && !identity) vars.BROWSER_CDP_URL = cdp; else delete vars.BROWSER_CDP_URL;
+  if (identity) { delete vars.BU_CDP_WS; delete vars.BU_CDP_URL; }
+  writePrivate(envFile, Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n', identity);
 
   return { home, key, display };
 }
@@ -277,7 +356,15 @@ function gatewayPid(home: string): number | null {
   try { process.kill(pid, 0); } catch { return null; }
   try {
     if (!fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes('gateway')) return null;
-  } catch { /* no /proc: trust the pid file */ }
+    if (env.restrictedAgents) {
+      const identity = requireAgentIdentity(path.basename(home), home);
+      const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+      const uids = /^Uid:\s+(\d+)\s+(\d+)/m.exec(status);
+      if (!uids || Number(uids[2]) !== identity.uid) return null;
+      const processEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8');
+      if (!processEnv.split('\0').includes(`HERMES_HOME=${home}`)) return null;
+    }
+  } catch { return null; }
   return pid;
 }
 
@@ -308,6 +395,11 @@ function managedUrl(botId: string): string {
 function managedKey(botId: string): string {
   let k = keys.get(botId);
   if (!k) {
+    if (env.restrictedAgents) {
+      const file = path.join(homeFor(botId), '.env');
+      assertSafeAgentFile(file, homeFor(botId));
+      assertRegularOrMissing(file);
+    }
     k = readDotenv(path.join(homeFor(botId), '.env')).API_SERVER_KEY ?? '';
     if (k) keys.set(botId, k);
   }
@@ -320,27 +412,41 @@ async function startGateway(botId: string): Promise<void> {
   if (!b.engine_port) db.prepare('UPDATE bots SET engine_port=? WHERE id=?').run(freePort(), botId);
   const url = managedUrl(botId);
 
-  // A gateway from an earlier run of this server is still good: use it as it is.
-  if ((await healthy(url)) && managedKey(botId) && (await keyAccepted(url, managedKey(botId)))) return;
+  // A previously running root gateway may NOT be adopted in restricted mode.
+  if ((await healthy(url)) && managedKey(botId) && (await keyAccepted(url, managedKey(botId)))) {
+    assertRunningAgentIdentity(botId);
+    return;
+  }
   if (await healthy(url)) {
     if (gatewayPid(homeFor(botId))) await stopGateway(botId);
     else throw new Error(`Port ${botRow(botId).engine_port} is taken by something else.`);
   }
 
   const { home, key, display } = await writeHome(botId);
+  const agentIdentity = env.restrictedAgents ? requireAgentIdentity(botId, home) : undefined;
   keys.set(botId, key);
   if (gatewayPid(home)) await stopGateway(botId);
 
-  const log = fs.openSync(path.join(home, 'logs', 'gateway.out.log'), 'a');
+  // In restricted mode, only root can traverse the stdout log directory.
+  // A bot must never be able to replace the log path with a symlink.
+  const logDir = '/var/log/botly/agents';
+  if (agentIdentity) {
+    fs.mkdirSync(logDir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(logDir, 0o700);
+  }
+  const logPath = agentIdentity ? path.join(logDir, `${agentUsername(botId)}.log`) : path.join(home, 'logs', 'gateway.out.log');
+  const log = fs.openSync(logPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_NOFOLLOW, 0o600);
   const child = spawn(env.hermesBin, ['gateway', 'run', '--no-supervise'], {
     cwd: home,
     detached: true,
+    ...(agentIdentity ? { uid: agentIdentity.uid, gid: agentIdentity.gid } : {}),
     stdio: ['ignore', log, log],
     // Only what the agent needs. None of this server's secrets, and nothing of the primary agent's messaging.
     env: {
       PATH: process.env.PATH ?? '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-      HOME: process.env.HOME ?? '/root',
-      USER: process.env.USER ?? 'root',
+      HOME: agentIdentity?.home ?? process.env.HOME ?? '/root',
+      USER: agentIdentity?.username ?? process.env.USER ?? 'root',
+      LOGNAME: agentIdentity?.username ?? process.env.USER ?? 'root',
       LANG: process.env.LANG ?? 'C.UTF-8',
       HERMES_HOME: home,
       HERMES_GATEWAY_LOCK_DIR: path.join(home, 'locks'),
@@ -396,7 +502,9 @@ export async function engineFor(botId: string): Promise<Engine> {
   }
   if (kind === 'primary') return { kind, url: env.hermesUrl, key: primaryKey(), home: env.hermesHome };
   const url = managedUrl(botId);
+  if (env.restrictedAgents && await healthy(url, 1500)) assertRunningAgentIdentity(botId);
   if (!(await healthy(url, 1500)) || !managedKey(botId)) await ensureManaged(botId);
+  if (env.restrictedAgents) assertRunningAgentIdentity(botId);
   return { kind, url, key: managedKey(botId), home: homeFor(botId) };
 }
 

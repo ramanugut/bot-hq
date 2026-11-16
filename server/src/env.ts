@@ -63,6 +63,8 @@ export const env = {
   mcpBaseUrl: (process.env.MCP_BASE_URL ?? `http://127.0.0.1:${process.env.PORT ?? 8787}`).replace(/\/+$/, ''),
   /** Extra MCP servers every managed bot gets, as a JSON object of Hermes `mcp_servers` entries (e.g. X's XMCP). */
   extraMcpServers: process.env.EXTRA_MCP_SERVERS ?? '',
+  /** Restricted managed gateways: separate OS users, minimal tools, Botly MCP approvals. Off until prepared. */
+  restrictedAgents: process.env.BOTLY_AGENT_SECURITY_MODE === 'restricted',
   primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Marvelous',
   primaryBotLabel: process.env.PRIMARY_BOT_LABEL ?? 'Chief of Staff',
 
