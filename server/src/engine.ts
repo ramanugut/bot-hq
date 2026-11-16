@@ -7,7 +7,7 @@ import { displayFor } from './box.js';
 import { cdpUrlFor, screenFor } from './computer.js';
 import { db } from './db.js';
 import { env } from './env.js';
-import { agentUsername, assertSafeAgentFile, requireAgentIdentity } from './security/agent-identity.js';
+import { assertSafeAgentFile, requireAgentIdentity } from './security/agent-identity.js';
 import { restrictManagedProfile } from './security/restricted-profile.js';
 import type { EngineInfo, EngineProvider } from './types.js';
 
@@ -54,12 +54,19 @@ function writePrivate(file: string, content: string, owner?: { uid: number; gid:
   // Atomic replacement prevents a managed bot from swapping a config path
   // for a symlink while the privileged app is writing it.
   const tmp = `${file}.${crypto.randomBytes(10).toString('hex')}.tmp`;
+  let fd: number | undefined;
   try {
-    fs.writeFileSync(tmp, content, { mode: 0o600, flag: 'wx' });
-    if (owner) fs.chownSync(tmp, owner.uid, owner.gid);
+    fd = fs.openSync(tmp, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_NOFOLLOW, 0o600);
+    fs.writeFileSync(fd, content);
+    if (owner) fs.fchownSync(fd, owner.uid, owner.gid);
+    fs.fchmodSync(fd, 0o600);
+    fs.closeSync(fd);
+    fd = undefined;
+    // Replacing a symlink does not follow it. All chmod/chown calls are on
+    // the open fd *before* rename, avoiding races with an agent-owned home.
     fs.renameSync(tmp, file);
-    fs.chmodSync(file, 0o600);
   } finally {
+    if (fd !== undefined) fs.closeSync(fd);
     try { fs.unlinkSync(tmp); } catch { /* already renamed */ }
   }
 }
