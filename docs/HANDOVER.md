@@ -164,3 +164,6 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - Tested on a simulated `/opt/hq` layout (stub Supervisor, systemd and health checks) for a full cutover and a forced
   rollback. Not yet run on the EC2 server.
 - Removed a committed Python cache file (`scripts/tools/promo/__pycache__`); `.gitignore` now excludes them.
+- `--check` needs PyYAML for the system `python3`; a server without it now gets `apt-get install -y python3-yaml` as the fix.
+- `--apply` refuses to start when a parent process is `supervisord` or a `hermes` program, i.e. from a bot's shell: the cutover
+  stops `hq-hermes` and every bot, which would kill the migration halfway. Bots may run the read-only `--check`.

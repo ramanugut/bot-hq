@@ -23,7 +23,9 @@ git -C /opt/hq/app show FETCH_HEAD:scripts/migrate-to-botly.sh > /root/migrate-t
 bash /root/migrate-to-botly.sh --check
 ```
 
-When the check passes and bot work is idle, run:
+When the check passes and bot work is idle, run this from your own SSH or EC2 Instance Connect
+terminal. A bot cannot run it: the cutover stops Hermes and every bot, so the script refuses to
+start from a bot's shell. The check itself is read-only, and a bot may run it.
 
 ```bash
 bash /root/migrate-to-botly.sh --apply

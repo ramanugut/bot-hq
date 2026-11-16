@@ -51,7 +51,7 @@ systemctl is-enabled --quiet hq-address.service
 if systemctl is-active --quiet hq-address.service; then
   die 'Wait for hq-address.service to finish.'
 fi
-python3 -c 'import yaml'
+python3 -c 'import yaml' 2>/dev/null || die 'Python YAML support is missing. Install it with: apt-get install -y python3-yaml'
 [[ -s $db ]] || die 'Database is empty.'
 before=$(git -C "$app" rev-parse HEAD)
 remote=$(git -C "$app" remote get-url origin)
@@ -70,6 +70,19 @@ git -C "$app" cat-file -e "$target:scripts/migrate-to-botly.sh" || die 'The fetc
 printf 'Installed: %s at %s. Moving to: %s at %s.\n' "$installed" "${before:0:7}" "$branch" "${target:0:7}"
 printf 'Legacy checkout, data, services and local health checks passed.\n'
 [[ $mode == --apply ]] || exit 0
+
+# The cutover stops hq-hermes and every bot. Started from a bot's shell, it would kill itself halfway.
+# Look at each parent's program name (and script name, for Python programs), not its full command line.
+pid=$PPID
+while [[ $pid =~ ^[0-9]+$ && $pid -gt 1 ]]; do
+  mapfile -d '' -t argv < "/proc/$pid/cmdline" 2>/dev/null || argv=()
+  for word in "$(cat "/proc/$pid/comm" 2>/dev/null)" "${argv[@]:0:2}"; do
+    case ${word##*/} in
+      supervisord|hermes|hermes-*) die 'Run --apply from your own SSH or EC2 Instance Connect terminal, not from a bot. The cutover stops the bots.' ;;
+    esac
+  done
+  pid=$(awk '/^PPid:/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
+done
 
 recovery=$(mktemp -d /opt/botly-recovery.XXXXXXXX)
 printf 'Private migration backup and logs: %s\n' "$recovery"
