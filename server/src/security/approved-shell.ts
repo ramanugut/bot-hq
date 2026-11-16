@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
-import { requireAgentIdentity } from './agent-identity.js';
+import { requireAgentIdentity, requirePrimaryIdentity } from './agent-identity.js';
 
 export interface RestrictedCommandResult {
   exitCode: number | null;
@@ -14,12 +14,13 @@ export async function runApprovedCommand(
   enginesDir: string,
   command: string,
   timeoutMs = 30_000,
+  primaryHome?: string,
 ): Promise<RestrictedCommandResult> {
   if (typeof command !== 'string' || !command.trim() || command.length > 4_000) {
     throw new Error('Expected a nonempty command of at most 4000 characters');
   }
-  const home = path.join(enginesDir, botId);
-  const identity = requireAgentIdentity(botId, home);
+  const home = primaryHome ?? path.join(enginesDir, botId);
+  const identity = primaryHome ? requirePrimaryIdentity(primaryHome) : requireAgentIdentity(botId, home);
   const cwd = path.join(home, 'workspace');
   const st = fs.lstatSync(cwd);
   if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== identity.uid || (st.mode & 0o077) !== 0) {
