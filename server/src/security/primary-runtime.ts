@@ -18,6 +18,8 @@ export function listeningUid(port: number): number | null {
     }
   }
   if (!inodes.size) return null;
+  const owners = new Set<number>();
+  const matchedSockets = new Set<string>();
   for (const proc of fs.readdirSync('/proc').filter(name => /^\d+$/.test(name))) {
     const fdDir = '/proc/' + proc + '/fd';
     let fds: string[];
@@ -27,12 +29,15 @@ export function listeningUid(port: number): number | null {
       try { link = fs.readlinkSync(path.join(fdDir, fd)); } catch { continue; }
       const socket = /^socket:\[(\d+)\]$/.exec(link);
       if (!socket || !inodes.has(socket[1])) continue;
-      const status = fs.readFileSync('/proc/' + proc + '/status', 'utf8');
-      const match = /^Uid:\s+(\d+)\s+(\d+)/m.exec(status);
-      if (match) return Number(match[2]);
+      try {
+        const status = fs.readFileSync('/proc/' + proc + '/status', 'utf8');
+        const match = /^Uid:\s+(\d+)\s+(\d+)/m.exec(status);
+        if (match) { owners.add(Number(match[2])); matchedSockets.add(socket[1]); }
+      } catch { /* process exited during inspection */ }
     }
   }
-  return null;
+  // A mixed-owner listener or unidentified socket cannot be trusted.
+  return owners.size === 1 && matchedSockets.size === inodes.size ? [...owners][0] : null;
 }
 
 /**
