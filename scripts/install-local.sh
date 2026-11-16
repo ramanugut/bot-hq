@@ -27,7 +27,7 @@ say() { printf '\n== %s\n' "$*"; }
 say "1/7 system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq --no-install-recommends supervisor xvfb x11vnc openbox x11-utils x11-xserver-utils \
+apt-get install -y -qq --no-install-recommends supervisor xvfb x11vnc openbox x11-utils x11-xserver-utils xauth \
   imagemagick wmctrl xdotool dbus dbus-x11 python3-gi python3-gi-cairo gir1.2-gtk-3.0 librsvg2-common \
   fonts-inter fonts-noto-color-emoji python3-yaml python3-pip ffmpeg pandoc poppler-utils openssl curl git ca-certificates caddy >/var/log/botly/apt.log 2>&1 \
   || { tail -20 /var/log/botly/apt.log; exit 1; }
