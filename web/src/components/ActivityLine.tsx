@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { BrainCircuit, Code2, FileText, Globe2, Hourglass, Network, Orbit, ScanSearch, Sparkles, Waves } from 'lucide-react';
+import { BotAvatar } from '../avatar/BotAvatar';
 import type { Bot, LiveState, Row } from '@shared/types';
 import { activityStatus, isWaitingForYou, repeatsStatus } from '../lib/phrases';
 import { duration } from '../lib/time';
@@ -24,20 +24,14 @@ export function activitySignalMode(live: LiveState, rows: Row[]): SignalMode {
   return 'work';
 }
 
-const glyphs = {
-  think: BrainCircuit, search: ScanSearch, read: FileText, browse: Globe2, write: Waves,
-  code: Code2, create: Sparkles, connect: Network, wait: Hourglass, work: Orbit,
-} satisfies Record<SignalMode, typeof BrainCircuit>;
-
-function Signal({ mode }: { mode: SignalMode }) {
-  const Glyph = glyphs[mode];
+/** The bot itself, bouncing while it works, with a little thought bubble: soft dots, or a "?" when it waits for you. */
+function Puff({ bot, waiting }: { bot: Bot; waiting: boolean }) {
   return (
-    <span className={`thinking__signal is-${mode}`} aria-hidden="true">
-      <span className="thinking__ring thinking__ring--outer" />
-      <span className="thinking__ring thinking__ring--inner" />
-      <span className="thinking__sweep" />
-      <Glyph className="thinking__glyph" size={18} strokeWidth={1.55} />
-      <span className="thinking__satellite" />
+    <span className={`thinking__puff${waiting ? ' is-waiting' : ''}`} aria-hidden="true">
+      <BotAvatar shape={bot.avatarShape} color={bot.avatarColor} size={40} title={bot.name} working={!waiting} />
+      <span className="thinking__bubble">
+        {waiting ? <span className="thinking__ask">?</span> : <><i /><i /><i /></>}
+      </span>
     </span>
   );
 }
@@ -91,7 +85,7 @@ export function ThinkingBlock({ bot, live, rows, steps = 0 }: Props) {
 
   return (
     <div className={`thinking thinking--signal is-${mode}`}>
-      <Signal mode={mode} />
+      <Puff bot={bot} waiting={waiting} />
       <div className="thinking__content">
         <div className="thinking__heading">
           <span className="thinking__name">{bot.name}</span>

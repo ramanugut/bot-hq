@@ -174,7 +174,8 @@ export function BotAvatar({ shape, color, size, star, ring, className, title, wo
   // Pure black would read as a hole: black puffs are a soft charcoal plush instead. Everything is a touch pastel.
   const raw = palette(color).fill.toUpperCase() === '#000000' ? '#3E4350' : palette(color).fill;
   const darkBody = isDark(raw);
-  const base = darkBody ? raw : shade(raw, 0.1);
+  // Already-pale colours (cream, lemon, blush) stay as they are, or they would fade into a light page.
+  const base = darkBody || luminance(raw) > 185 ? raw : shade(raw, 0.1);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const bodyId = `pb${uid}`;
   const glossId = `pg${uid}`;
@@ -182,8 +183,8 @@ export function BotAvatar({ shape, color, size, star, ring, className, title, wo
     body: `url(#${bodyId})`,
     deep: shade(raw, darkBody ? 0.35 : -0.28),
     light: shade(raw, darkBody ? 0.45 : 0.42),
-    // Rosy cheeks; on pink and red bodies they turn a lighter coral so they still show.
-    cheek: /^#(F9|FB|E5|C8)/i.test(raw) ? '#FFD0D8' : '#FF8FA8',
+    // Rosy cheeks; on pink and red bodies they turn a pale rose so they still show.
+    cheek: isRosy(raw) ? '#FFD6DE' : '#FF8FA8',
   };
   const tiny = size < 22;
   const eye = darkBody ? '#FFF6EE' : '#2A2230';
@@ -261,12 +262,30 @@ function shade(hex: string, amount: number): string {
   return `#${ch((n >> 16) & 255)}${ch((n >> 8) & 255)}${ch(n & 255)}`;
 }
 
-function isDark(hex: string): boolean {
+const rgb = (hex: string): [number, number, number] | null => {
   const m = /^#?([0-9a-f]{6})/i.exec(hex);
-  if (!m) return false;
+  if (!m) return null;
   const n = parseInt(m[1], 16);
-  const lum = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
-  return lum < 70;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+function luminance(hex: string): number {
+  const c = rgb(hex);
+  return c ? 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] : 0;
+}
+
+const isDark = (hex: string) => luminance(hex) < 70;
+
+/** Pinks and reds, where pink cheeks would vanish. */
+function isRosy(hex: string): boolean {
+  const c = rgb(hex);
+  if (!c) return false;
+  const [r, g, b] = c.map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  if (max - min < 0.2 || max !== r) return false;
+  const hue = ((g - b) / (max - min) + 6) % 6 * 60;
+  return hue < 18 || hue > 300;
 }
 
 export function BotAvatarFor({ bot, size, star, className }: { bot: Pick<Bot, 'avatarShape' | 'avatarColor' | 'name'> & { isPrimary?: boolean; id?: string }; size: number; star?: boolean; className?: string }) {

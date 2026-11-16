@@ -28,7 +28,8 @@ import { checkPassword, hashPassword, noteFailure, tooManyTries } from './lib/pa
 export const api = new Hono<AuthVars>();
 
 const SHAPES: AvatarShape[] = ['blob', 'pebble', 'bean', 'egg', 'squircle', 'tablet', 'capsule', 'cylinder', 'hex', 'gem', 'crystal', 'wedge', 'shield', 'dome', 'arch', 'cloud', 'teardrop', 'leaf', 'square', 'sparkle', 'clover', 'flower', 'heart', 'house', 'star'];
-const COLORS: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray'];
+const COLORS: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray',
+  'peach', 'coral', 'blush', 'lilac', 'sky', 'mint', 'lemon', 'lime', 'sage', 'caramel', 'berry', 'navy', 'cream'];
 
 function hashPick<T>(id: string, list: T[]): T {
   let h = 0x811c9dc5;

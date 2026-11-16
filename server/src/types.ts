@@ -6,7 +6,8 @@ export type AvatarShape =
   | 'square' | 'sparkle' | 'clover' | 'flower' | 'heart' | 'house' | 'star';
 
 export type AvatarColor =
-  | 'black' | 'brown' | 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'violet' | 'magenta' | 'gray';
+  | 'black' | 'brown' | 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'violet' | 'magenta' | 'gray'
+  | 'peach' | 'coral' | 'blush' | 'lilac' | 'sky' | 'mint' | 'lemon' | 'lime' | 'sage' | 'caramel' | 'berry' | 'navy' | 'cream';
 
 export interface User { id: string; email: string; name: string; avatarUrl: string | null }
 

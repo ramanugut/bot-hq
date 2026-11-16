@@ -354,7 +354,7 @@ function LookPicker({ shape, color, onShape, onColor }: { shape: AvatarShape; co
       <div className="swatches" role="radiogroup" aria-label="Character color">
         <div className="swatches__row">
           {COLOR_ORDER.map((c) => (
-            <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={c} className="swatch-cell" onClick={() => onColor(c)}>
+            <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={c} title={c} className="swatch-cell" onClick={() => onColor(c)}>
               <span className={`swatch${color === c ? ' is-selected' : ''}`} style={{ background: palette(c).fill }} />
             </button>
           ))}
