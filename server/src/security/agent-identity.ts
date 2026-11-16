@@ -58,3 +58,29 @@ export function assertSafeAgentFile(file: string, home: string): void {
   const baseStat = fs.lstatSync(base);
   if (!baseStat.isDirectory() || baseStat.isSymbolicLink()) throw new Error('Agent home cannot be a symlink');
 }
+
+/** The primary Hermes owner is separate from managed bots and the root web app. */
+export function requirePrimaryIdentity(home: string): AgentIdentity {
+  const username = 'botly_primary';
+  let passwd: string;
+  try {
+    passwd = execFileSync('getent', ['passwd', username], { encoding: 'utf8', timeout: 3000 }).trim();
+  } catch {
+    throw new Error('Primary agent account is missing; run the approved primary migration first');
+  }
+  const fields = passwd.split(':');
+  if (fields[0] !== username) throw new Error('Unexpected primary-agent account');
+  const uid = Number(fields[2]), gid = Number(fields[3]);
+  if (!Number.isSafeInteger(uid) || !Number.isSafeInteger(gid) || uid < 100 || gid < 100) {
+    throw new Error('Primary Hermes user must be non-root');
+  }
+  const resolved = path.resolve(home);
+  if (resolved === '/root' || resolved.startsWith('/root/')) {
+    throw new Error('Primary Hermes home must not be inside /root');
+  }
+  const st = fs.lstatSync(resolved);
+  if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== uid || st.gid !== gid || (st.mode & 0o077) !== 0) {
+    throw new Error('Primary Hermes home must be owned by botly_primary with mode 0700');
+  }
+  return { username, uid, gid, home: resolved };
+}
