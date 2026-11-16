@@ -212,7 +212,7 @@ export const TOOLS: ToolDef[] = [
     impl: async (a, ctx) => {
       const kind = getBotRow(ctx.botId)?.engine;
       const permitted = (kind === 'managed' && env.restrictedAgents) || (kind === 'primary' && env.restrictedPrimary);
-      if (!permitted) return { output: 'Restricted, non-root agent mode must be active before shell commands can run.' };
+      if (!permitted || !env.shellSandbox) return { output: 'Shell is disabled until restricted agent mode and the bubblewrap sandbox are enabled and tested.' };
       auditRestricted(ctx.botId, 'approved_shell', 'started');
       try {
         const r = await runApprovedCommand(ctx.botId, env.enginesDir, String(a.command ?? ''), 30_000, kind === 'primary' ? env.hermesHome : undefined);
