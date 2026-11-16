@@ -6,6 +6,12 @@ Run it as root during a maintenance window. It builds Botly before stopping
 services. Chats, bot files, browser profiles and Hermes homes are carried over.
 Active bot work and live browser windows are interrupted during the cutover.
 
+The checkout in `/opt/hq/app` may be on `free-edition` or on the `legacy-hq-tavily`
+maintenance branch. Do not switch branches yourself. From `legacy-hq-tavily` the
+migration accepts only a commit published on that branch, and the new checkout
+starts on `free-edition`, which already contains the Tavily tools and every UI
+change made on the maintenance branch. The check prints both commits.
+
 ## Check first
 
 From the EC2 terminal, run:

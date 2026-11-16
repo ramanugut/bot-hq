@@ -18,6 +18,8 @@ unit=/etc/systemd/system
 cron=/etc/cron.d
 policy=/etc/opt/chrome/policies/managed
 branch=free-edition
+# The /opt/hq server may run the maintenance branch. Its changes are all in free-edition too.
+legacy_branch=legacy-hq-tavily
 exec 9>/run/lock/botly-migration.lock
 flock -n 9 || die 'Another Botly migration is running.'
 
@@ -34,7 +36,8 @@ for path in "$app/.env" "$db" "$hermes" "$supervisor/hq-app.conf" "$supervisor/h
   [[ -f $path && ! -L $path ]] || die "Expected a regular file at $path."
 done
 [[ ! -e $old/data/botly.db && ! -e $old/data/botly.db-wal && ! -e $old/data/botly.db-shm ]] || die 'Botly database paths are already in use.'
-[[ $(git -C "$app" branch --show-current) == "$branch" ]] || die "Expected checkout on $branch."
+installed=$(git -C "$app" branch --show-current)
+[[ $installed == "$branch" || $installed == "$legacy_branch" ]] || die "Expected checkout on $branch or $legacy_branch, found ${installed:-no branch}."
 [[ -z $(git -C "$app" status --porcelain --untracked-files=normal) ]] || die 'Save or remove checkout changes before migrating.'
 grep -Eq '^DB_PATH=/opt/hq/data/hq\.db$' "$app/.env" || die 'This migration requires the standard EC2 database path.'
 grep -Eq '^ENGINES_DIR=/opt/hq/data/engines$' "$app/.env" || die 'This migration requires the standard EC2 engines directory.'
@@ -50,22 +53,31 @@ if systemctl is-active --quiet hq-address.service; then
 fi
 python3 -c 'import yaml'
 [[ -s $db ]] || die 'Database is empty.'
+before=$(git -C "$app" rev-parse HEAD)
+remote=$(git -C "$app" remote get-url origin)
+if [[ $installed == "$legacy_branch" ]]; then
+  # The maintenance branch never descends from free-edition. Accept only a commit published on it,
+  # so no local work is left behind; its changes were all carried over to free-edition.
+  git -C "$app" fetch -q origin "$legacy_branch"
+  git -C "$app" merge-base --is-ancestor "$before" FETCH_HEAD || die "The installed commit is not on origin/$legacy_branch."
+fi
+git -C "$app" fetch -q origin "$branch"
+target=$(git -C "$app" rev-parse FETCH_HEAD)
+if [[ $installed == "$branch" ]]; then
+  git -C "$app" merge-base --is-ancestor "$before" "$target" || die 'The fetched release does not descend from the installed commit.'
+fi
+git -C "$app" cat-file -e "$target:scripts/migrate-to-botly.sh" || die 'The fetched release has no migration.'
+printf 'Installed: %s at %s. Moving to: %s at %s.\n' "$installed" "${before:0:7}" "$branch" "${target:0:7}"
 printf 'Legacy checkout, data, services and local health checks passed.\n'
 [[ $mode == --apply ]] || exit 0
 
 recovery=$(mktemp -d /opt/botly-recovery.XXXXXXXX)
 printf 'Private migration backup and logs: %s\n' "$recovery"
-before=$(git -C "$app" rev-parse HEAD)
-remote=$(git -C "$app" remote get-url origin)
-git -C "$app" fetch origin "$branch"
-target=$(git -C "$app" rev-parse FETCH_HEAD)
 # Keep the working URL during the cutover. Switch to the new address if GitHub already renamed it.
 if [[ $remote == https://github.com/ramanugut/bot-hq.git ]]; then
   renamed_target=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote https://github.com/ramanugut/botly.git "refs/heads/$branch" 2>/dev/null | cut -f1 || true)
   [[ $renamed_target != "$target" ]] || remote=https://github.com/ramanugut/botly.git
 fi
-git -C "$app" merge-base --is-ancestor "$before" "$target" || die 'The fetched release does not descend from the installed commit.'
-git -C "$app" cat-file -e "$target:scripts/migrate-to-botly.sh" || die 'The fetched release has no migration.'
 mkdir "$recovery/build"
 git -C "$app" archive "$target" | tar -x -C "$recovery/build"
 export PATH="$old/node/bin:$PATH"
@@ -187,8 +199,10 @@ done
 # Keep the original checkout and settings available for rollback.
 move "$new/app" "$recovery/checkout"
 add_undo 'if [[ -d $new/app ]]; then mv -T -- "$new/app" "$recovery/failed-checkout"; fi'
-git clone -q --no-hardlinks --branch "$branch" "$recovery/checkout" "$new/app"
-git -C "$new/app" reset -q --hard "$target"
+# Clone without picking a branch: the old checkout may have no free-edition branch, or an outdated one.
+git clone -q --no-hardlinks --no-checkout "$recovery/checkout" "$new/app"
+git -C "$new/app" checkout -q -B "$branch" "$target"
+git -C "$new/app" branch -q -D "$legacy_branch" 2>/dev/null || true
 git -C "$new/app" remote set-url origin "$remote"
 rewrite "$recovery/app.env" "$new/app/.env"
 sed -i -E 's/^HQ_(SCREENS|LOCAL|AGENT_APPROVALS|SCREEN_SIZE|SCREEN_SLEEP_MIN|TIMEZONE|SEARXNG_URL)=/BOTLY_\1=/' "$new/app/.env"

@@ -152,3 +152,15 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - `web/src/styles/polish.css` loads last from `web/src/main.tsx` (after `refinement.css`). It is look-and-feel only: ink (#111318 family) dark surfaces and one mint accent (#7CF0C4, from the app icon) via `--color-accent*` tokens, one focus-ring style, a taller composer whose focus ring sits on the whole box (fixes the stray rectangle around the message field), a header fade so messages no longer slide under the floating pills, small-caps section labels, the model chip on its own line in the details panel, a mint sign-in button, and larger touch targets on phones.
 - `Sidebar.tsx` gained a "Botly" wordmark (`.sidebar__brand`, uses `/icon.svg`). No other markup, layout, navigation or behaviour changed.
 - Checked with `?fixtures` in Vite against a mocked API (desktop and 390px, light and dark). Not deployed and not checked on the EC2 server. Remove the import to undo.
+
+## Migration from the maintenance branch (16 Nov 2026, GitHub only)
+- The EC2 checkout was on `legacy-hq-tavily`, so `migrate-to-botly.sh --check` stopped at "Expected checkout on free-edition".
+  The script now accepts `free-edition` or `legacy-hq-tavily`. From the maintenance branch it requires the installed commit
+  to be published on `origin/legacy-hq-tavily` (no local work left behind) instead of descending from `free-edition`.
+- `--check` now also fetches and prints the installed and target commits, so a bad state is found before the recovery
+  directory is created. The new checkout is cloned without picking a branch and then set to `free-edition` at the target.
+- Before this change the legacy branch held only its updater pin, `deploy-legacy-tavily.sh`, CI and UI backports; the UI is
+  identical on both branches and `server/` differs only by the rename. Any future legacy-only fix must also go to `free-edition`.
+- Tested on a simulated `/opt/hq` layout (stub Supervisor, systemd and health checks) for a full cutover and a forced
+  rollback. Not yet run on the EC2 server.
+- Removed a committed Python cache file (`scripts/tools/promo/__pycache__`); `.gitignore` now excludes them.
