@@ -9,6 +9,7 @@ import { db } from './db.js';
 import { env } from './env.js';
 import { agentUsername, assertSafeAgentFile, requireAgentIdentity } from './security/agent-identity.js';
 import { restrictManagedProfile } from './security/restricted-profile.js';
+import { assertRestrictedPrimary } from './security/primary-runtime.js';
 import type { EngineInfo, EngineProvider } from './types.js';
 
 /**
@@ -500,7 +501,10 @@ export async function engineFor(botId: string): Promise<Engine> {
     if (b.kind === 'room') throw new Error('A group chat has no agent of its own.');
     kind = assignEngine(botId);
   }
-  if (kind === 'primary') return { kind, url: env.hermesUrl, key: primaryKey(), home: env.hermesHome };
+  if (kind === 'primary') {
+    if (env.restrictedPrimary) assertRestrictedPrimary(env.hermesHome, env.hermesUrl);
+    return { kind, url: env.hermesUrl, key: primaryKey(), home: env.hermesHome };
+  }
   const url = managedUrl(botId);
   if (env.restrictedAgents && await healthy(url, 1500)) assertRunningAgentIdentity(botId);
   if (!(await healthy(url, 1500)) || !managedKey(botId)) await ensureManaged(botId);
