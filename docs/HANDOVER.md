@@ -147,3 +147,8 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - Botly's main toolbar, shared icons, settings icons and Tasks icon have softer outlines, rounded controls, quiet shadows and tighter grouping. Existing actions and navigation remain unchanged. Reduced-motion settings stop activity animations.
 - CSS refinement loads last from `web/src/main.tsx`; change or remove it to adjust the style without rewriting existing layout styles.
 - The same UI-only changes are backported to `legacy-hq-tavily` for servers still using `/opt/hq`. Deploy that branch only on the old layout; do not run the renamed `free-edition` updater there. Neither branch was deployed by these GitHub commits.
+
+## UI polish layer (16 Nov 2026, GitHub only)
+- `web/src/styles/polish.css` loads last from `web/src/main.tsx` (after `refinement.css`). It is look-and-feel only: ink (#111318 family) dark surfaces and one mint accent (#7CF0C4, from the app icon) via `--color-accent*` tokens, one focus-ring style, a taller composer whose focus ring sits on the whole box (fixes the stray rectangle around the message field), a header fade so messages no longer slide under the floating pills, small-caps section labels, the model chip on its own line in the details panel, a mint sign-in button, and larger touch targets on phones.
+- `Sidebar.tsx` gained a "Botly" wordmark (`.sidebar__brand`, uses `/icon.svg`). No other markup, layout, navigation or behaviour changed.
+- Checked with `?fixtures` in Vite against a mocked API (desktop and 390px, light and dark). Not deployed and not checked on the EC2 server. Remove the import to undo.

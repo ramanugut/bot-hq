@@ -111,6 +111,7 @@ export function Sidebar() {
           </button>
           {!collapsed && (
             <>
+              <span className="sidebar__brand"><img src="/icon.svg" alt="" />Botly</span>
               <button type="button" className="icon-btn" onClick={() => setModal('search')} aria-label="Search" title="Search (⌘K)">
                 <Icon name="search" opacity={0.66} />
               </button>
