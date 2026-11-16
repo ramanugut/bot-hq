@@ -8,7 +8,7 @@
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
-    "test:hardening": "npm run build -w server && node --test tests/hardening.test.mjs tests/tavily.test.mjs tests/video-preview.test.mjs && bash -n scripts/backup.sh && bash -n scripts/update.sh && bash -n scripts/migrate-to-botly.sh && bash tests/backup.test.sh"
+    "test:hardening": "npm run build -w server && node --test tests/hardening.test.mjs tests/tavily.test.mjs tests/video-preview.test.mjs tests/knowledge.test.mjs && bash -n scripts/backup.sh && bash -n scripts/update.sh && bash -n scripts/migrate-to-botly.sh && bash tests/backup.test.sh"
   },
   "engines": { "node": ">=22" }
 }

@@ -10,7 +10,7 @@ import { screenForWork } from '../computer.js';
 import { engineFor, readSoul } from '../engine.js';
 import { instructionsFor } from './prompt.js';
 import { notifyBot } from '../push.js';
-import { activityFor, appToolName, humanizeSlug, policyFor, postImage, splitMedia } from './tools.js';
+import { activityFor, ALWAYS_ASK, appToolName, humanizeSlug, policyFor, postImage, splitMedia } from './tools.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -164,7 +164,7 @@ export async function requestApproval(
   const tk = pol.toolkit ? await toolkitInfo(pol.toolkit).catch(() => undefined) : undefined;
   const card = appendRow(botId, 'card', {
     type: 'card', card: 'approval', approvalId, title: `Allow ${getBotRow(botId).name} to ${pol.title.split(': ')[1] ?? pol.title}?`,
-    detail: describeArgs(args), tool: pol.key, toolkit: pol.toolkit, toolkitName: tk?.name, logo: tk?.logo, args, status: 'pending',
+    detail: pol.key === 'save_knowledge' ? describeKnowledgeChange(args) : describeArgs(args), tool: pol.key, toolkit: pol.toolkit, toolkitName: tk?.name, logo: tk?.logo, args, status: 'pending',
   });
   db.prepare('INSERT INTO approvals(id,bot_id,row_seq,call_id,tool,status,created_at) VALUES (?,?,?,?,?,?,?)').run(approvalId, botId, card.seq, '', pol.key, 'pending', now());
   db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
@@ -218,11 +218,19 @@ export function resolveApproval(userId: string, approvalId: string, decision: 'a
   if (ap.status !== 'pending') return;
   const waiter = waiters.get(approvalId);
   if (!waiter) return expireApproval(approvalId);
+  // Some tools ask every time (company knowledge): "always" counts as a single yes for them.
+  if (decision === 'always' && ALWAYS_ASK.has(ap.tool)) decision = 'allow';
   const status = decision === 'deny' ? 'denied' : decision === 'always' ? 'always' : 'allowed';
   db.prepare('UPDATE approvals SET status=?, resolved_at=? WHERE id=?').run(status, now(), approvalId);
   if (decision === 'always') db.prepare("INSERT OR REPLACE INTO policies(user_id,tool,mode) VALUES (?,?,'always_allow')").run(userId, ap.tool);
   setApprovalCard(ap.bot_id, ap.row_seq, approvalId, status);
   waiter.resolve(decision === 'deny' ? 'deny' : 'allow');
+}
+
+/** The whole proposed entry, so the owner approves exactly what will be saved. */
+function describeKnowledgeChange(args: any): string {
+  const a = args ?? {};
+  return `${a.id ? 'Change to' : 'New entry in'} ${String(a.space ?? '')}: ${String(a.title ?? '')}\n\n${String(a.content ?? '').slice(0, 3000)}`;
 }
 
 function describeArgs(args: any): string {

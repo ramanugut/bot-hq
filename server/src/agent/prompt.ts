@@ -4,6 +4,7 @@ import { connectedToolkits, hasComposio } from '../composio.js';
 import { env } from '../env.js';
 import { LIBRARY_ROOT } from './tools.js';
 import { tavilyConfigured } from '../tavily.js';
+import { botSpaces } from '../knowledge.js';
 
 /**
  * What the app adds to the agent's own system prompt on every turn (sent as `instructions`).
@@ -26,6 +27,14 @@ export async function instructionsFor(userId: string, botId: string): Promise<st
   const skills = (db.prepare('SELECT name, body FROM skills WHERE bot_id=? ORDER BY created_at').all(botId) as any[]).map((s) => `### ${s.name}\n${s.body}`).join('\n\n');
   const tz = userTimezone(userId);
   const agentTotal = (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as any).n as number;
+  // Company knowledge: Teammate bots only, and only the spaces the owner ticked for this bot.
+  const kspaces = botSpaces(bot);
+  const internal = kspaces.filter((s) => s.kind !== 'customer').map((s) => s.name);
+  const knowledge = kspaces.length ? `\n## Company knowledge
+- You can read ${owner}'s company knowledge in: ${kspaces.map((s) => s.name).join(', ')}. Before answering anything about the business (plans, prices, policies, procedures, brand), use search_knowledge, then read_knowledge, and name the entry you relied on. If it is not there, say so and ask; never guess a price or policy.${internal.length ? `\n- Only facts from Customer-safe may be passed on to customers. ${internal.join(' and ')} ${internal.length === 1 ? 'is' : 'are'} internal.` : ''}
+- Logos and brand files: use_knowledge_file copies one into your Library (for videos, documents, posts).
+- When you learn a lasting fact about the business, propose it with save_knowledge. ${owner} approves every change; never include passwords or keys.
+` : '';
   const routines = listRoutines(botId).map((r) => `- ${r.name} (${r.id}): ${r.enabled ? r.description : 'paused'}; ${r.prompt.slice(0, 120)}`).join('\n');
   let apps = '';
   try { apps = [...(await connectedToolkits(userId))].sort().join(', '); } catch { apps = '(could not check right now)'; }
@@ -84,5 +93,5 @@ Before anything that is hard to undo or speaks for ${owner} (posting publicly, s
 - ${owner}'s time zone: ${tz}. Their local time now: ${new Date().toLocaleString('en-ZA', { timeZone: tz, dateStyle: 'full', timeStyle: 'short' })}.
 - Connected apps: ${apps || 'none yet'}
 ${team ? `- Other agents on the team:\n${team}` : '- You are the only agent on the team so far.'}${groups ? `\n- Group chats you are in: ${groups}` : ''}
-${routines ? `\n## Your routines in the app\n${routines}\n` : ''}${skills ? `\n## Skills ${owner} gave you\n${skills}\n` : ''}${bot.instructions ? `\n## Instructions from ${owner}\n${bot.instructions}\n` : ''}`;
+${knowledge}${routines ? `\n## Your routines in the app\n${routines}\n` : ''}${skills ? `\n## Skills ${owner} gave you\n${skills}\n` : ''}${bot.instructions ? `\n## Instructions from ${owner}\n${bot.instructions}\n` : ''}`;
 }

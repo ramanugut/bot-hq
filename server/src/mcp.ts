@@ -4,7 +4,7 @@ import { getBotRow } from './store.js';
 import { composioTools } from './composio.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { claimToolRow, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth } from './agent/loop.js';
-import { policyFor, runComposioTool, toolMap, TOOLS, type ToolCtx } from './agent/tools.js';
+import { policyFor, runComposioTool, TEAMMATE_TOOLS, toolMap, TOOLS, type ToolCtx } from './agent/tools.js';
 
 /**
  * The app's tools, served to the Hermes engines over MCP (streamable HTTP, JSON answers only).
@@ -41,8 +41,10 @@ function caller(slug: string, auth: string | undefined): { botId: string | null 
 }
 
 async function listTools(botId: string | null) {
-  const own = TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   const bot = botId ? getBotRow(botId) : null;
+  // Company knowledge tools exist only for Teammate bots; Personal assistants never see them.
+  const own = TOOLS.filter((t) => bot?.mode === 'teammate' || !TEAMMATE_TOOLS.has(t.name))
+    .map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   if (!bot) return own;
   const apps = (await composioTools(bot.user_id))
     .filter((t: any) => t?.type === 'function' && typeof t.name === 'string' && !toolMap.has(t.name))

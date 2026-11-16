@@ -17,6 +17,8 @@ import { safeLibraryReadPath } from '../lib/library-path.js';
 import { runTavily } from '../tavily.js';
 import { spawn } from 'node:child_process';
 import { describePreview, previewProject } from '../lib/video-preview.js';
+import { botSpaces, createEntry, entryFile, getEntry, search as searchKnowledgeIndex, updateEntry } from '../knowledge.js';
+import { looksSecret } from '../lib/knowledge-text.js';
 
 /** Only one video render at a time across the small EC2 server. */
 const rendering = new Set<string>();
@@ -57,6 +59,27 @@ function projectFolder(requested: unknown, botId: string): { folder: string } | 
   if (!fs.existsSync(`${folder}/index.html`)) return { error: `${folder} has no index.html. Start one with: hyperframes init ${folder} --example blank --non-interactive --skip-skills --resolution portrait` };
   return { folder };
 }
+
+/** The knowledge spaces a bot may use (narrowed to one when `spaceName` is given), or why it can't. */
+function knowledgeAccess(botId: string, spaceName?: unknown): { userId: string; spaces: { id: string; name: string; kind: string }[] } | { error: string } {
+  const bot = getBotRow(botId);
+  if (!bot) return { error: 'Unknown bot.' };
+  if (bot.mode !== 'teammate') return { error: 'Company knowledge is only for Teammate bots. The owner can switch this bot to Teammate in its settings.' };
+  let spaces = botSpaces(bot);
+  if (!spaces.length) return { error: 'The owner has not given you any knowledge spaces (Bot settings, Knowledge).' };
+  if (spaceName) {
+    const want = String(spaceName).trim().toLowerCase();
+    const hit = spaces.filter((s) => s.name.toLowerCase() === want || s.id === spaceName);
+    if (!hit.length) return { error: `You can only use these spaces: ${spaces.map((s) => s.name).join(', ')}.` };
+    spaces = hit;
+  }
+  return { userId: bot.user_id, spaces };
+}
+
+/** Tools that must ask every time: "Always allow" is never offered or honoured for them. */
+export const ALWAYS_ASK = new Set(['save_knowledge']);
+/** Tools only Teammate bots are given. */
+export const TEAMMATE_TOOLS = new Set(['search_knowledge', 'read_knowledge', 'use_knowledge_file', 'save_knowledge']);
 
 /** Run a video render in the background; post the video to the chat (or say why it failed) when it ends. */
 function startRender(botId: string, cmd: string, args: string[], out: string, caption: string, cleanup?: () => void) {
@@ -479,6 +502,91 @@ export const TOOLS: ToolDef[] = [
       }
     },
   },
+  // ---------- company knowledge (Teammate bots only, and only the spaces the owner ticked) ----------
+  {
+    name: 'search_knowledge',
+    description: "Search the company knowledge the owner keeps in Botly: plans, prices, policies, FAQs, procedures, brand guidelines, logos and documents. Search before answering anything about the business, and never guess a price or policy that is not there. Returns the best matches with their ids; read one fully with read_knowledge.",
+    parameters: obj({
+      query: { type: 'string', description: 'A few words, e.g. "refund policy" or "business plan price".' },
+      space: { type: 'string', description: 'Optional: only this space (by name), e.g. "Customer-safe".' },
+    }, ['query']),
+    activity: 'reading_web',
+    label: 'Searching company knowledge',
+    impl: async (a, ctx) => {
+      const k = knowledgeAccess(ctx.botId, a.space);
+      if ('error' in k) return { output: k.error };
+      const hits = searchKnowledgeIndex(k.userId, k.spaces.map((s) => s.id), String(a.query ?? ''), 6);
+      if (!hits.length) return { output: `Nothing in ${k.spaces.map((s) => s.name).join(', ')} matches "${a.query}". Do not guess: say you are not sure, or ask the owner.`, summary: 'No matches' };
+      const name = new Map(k.spaces.map((s) => [s.id, s.name]));
+      const lines = hits.map((h) => `- [${h.id}] ${h.title} (${name.get(h.spaceId)}, updated ${new Date(h.updatedAt).toISOString().slice(0, 10)}${h.fileName ? `, file: ${h.fileName}` : ''})${h.snippet ? `\n  ${h.snippet.replace(/\s+/g, ' ')}` : ''}`);
+      return { output: `${lines.join('\n')}\n\nRead an entry with read_knowledge before relying on it, and name the entry when you use it.`, summary: `${hits.length} match${hits.length === 1 ? '' : 'es'}` };
+    },
+  },
+  {
+    name: 'read_knowledge',
+    description: 'Read one company knowledge entry in full (its id comes from search_knowledge).',
+    parameters: obj({ id: { type: 'string' } }, ['id']),
+    activity: 'reading_web',
+    label: 'Reading company knowledge',
+    impl: async (a, ctx) => {
+      const k = knowledgeAccess(ctx.botId);
+      if ('error' in k) return { output: k.error };
+      const e = getEntry(k.userId, String(a.id ?? ''));
+      const space = e && k.spaces.find((s) => s.id === e.spaceId);
+      if (!e || !space) return { output: 'No entry with that id in the spaces you can read.' };
+      const body = e.body.length > 30_000 ? `${e.body.slice(0, 30_000)}\n[…the entry continues; ask the owner if you need the rest]` : e.body;
+      const links = e.links.length ? `\n\nLinked entries: ${e.links.map((l) => (l.id ? `${l.title} [${l.id}]` : l.title)).join(', ')}` : '';
+      const file = e.fileName ? `\n\nFile: ${e.fileName}. Get a copy in your Library with use_knowledge_file to use it (for example a logo in a video).` : '';
+      return { output: `# ${e.title}\nSpace: ${space.name} · updated ${new Date(e.updatedAt).toISOString().slice(0, 10)} by ${e.updatedBy}\n\n${body || '(no text)'}${links}${file}`, summary: e.title };
+    },
+  },
+  {
+    name: 'use_knowledge_file',
+    description: "Copy a company knowledge entry's file (logo, photo, PDF, Word file) into your Library so you can use it, e.g. a logo in a promo video. Returns the file's path.",
+    parameters: obj({ id: { type: 'string' } }, ['id']),
+    activity: 'reading_web',
+    label: 'Getting a company file',
+    impl: async (a, ctx) => {
+      const k = knowledgeAccess(ctx.botId);
+      if ('error' in k) return { output: k.error };
+      const e = getEntry(k.userId, String(a.id ?? ''));
+      if (!e || !k.spaces.some((s) => s.id === e.spaceId)) return { output: 'No entry with that id in the spaces you can read.' };
+      const file = entryFile(k.userId, e.id);
+      if (!file) return { output: `${e.title} has no file.` };
+      const dest = `${LIBRARY_ROOT}/${ctx.botId}/knowledge/${file.name}`;
+      await box.writeFile(dest, fs.readFileSync(file.path));
+      return { output: `Copied to ${dest}`, summary: file.name };
+    },
+  },
+  {
+    name: 'save_knowledge',
+    description: "Propose a new company knowledge entry, or a change to one (give its id). The owner always approves first; nothing is saved without their yes. Use it when you learn a lasting fact about the business (a new price, a changed policy, a how-to), not for chat details. Never include passwords, keys or personal data.",
+    parameters: obj({
+      space: { type: 'string', description: 'Space name, e.g. "Company" or "Customer-safe". Only facts customers may hear go in Customer-safe.' },
+      title: { type: 'string', description: 'Short title, e.g. "Business plan".' },
+      content: { type: 'string', description: 'The full entry text (Markdown). When changing an entry, give the whole new text, not only the change.' },
+      id: { type: 'string', description: 'The id of the entry to change; leave out for a new entry.' },
+    }, ['space', 'title', 'content']),
+    activity: 'drafting_file',
+    label: 'Saving company knowledge',
+    impl: async (a, ctx) => {
+      const k = knowledgeAccess(ctx.botId, a.space);
+      if ('error' in k) return { output: k.error };
+      const space = k.spaces[0];
+      const content = String(a.content ?? '');
+      const secret = looksSecret(`${a.title ?? ''}\n${content}`);
+      if (secret) return { output: `Not saved: it looks like it contains ${secret}. Knowledge must never hold secrets; leave that part out.` };
+      const by = getBotRow(ctx.botId)?.name ?? 'a bot';
+      if (a.id) {
+        const old = getEntry(k.userId, String(a.id));
+        if (!old || !k.spaces.some((s) => s.id === old.spaceId)) return { output: 'No entry with that id in the spaces you can read.' };
+        const e = updateEntry(k.userId, old.id, { title: String(a.title ?? old.title), body: content, spaceId: space.id, by });
+        return { output: `Updated "${e!.title}" in ${space.name} (the previous version is kept in its history).`, summary: `Updated ${e!.title}` };
+      }
+      const e = createEntry(k.userId, { spaceId: space.id, title: String(a.title ?? ''), body: content, by });
+      return { output: `Saved "${e.title}" in ${space.name} [${e.id}].`, summary: `Saved ${e.title}` };
+    },
+  },
   {
     name: 'show_image',
     description: "Show an image, video or audio file in the chat: images (PNG, JPG, WEBP, GIF) appear in the conversation, videos (MP4, WEBM) and audio (MP3, M4A, WAV, OGG) play right there. Give the path of a file you made; it is copied into your Library. Call it every time you make an image, video or voice-over for the user, instead of only writing the file's path.",
@@ -810,12 +918,12 @@ export function policyFor(userId: string, toolName: string, args: any): { decisi
     // Native Botly tools also need a real permission gate, not only a polite AI prompt.
     const sensitive = new Set(['create_routine', 'create_event_routine', 'update_routine', 'delete_routine',
       'create_group', 'make_promo_video', 'render_video_project',
-      'tavily_map', 'tavily_crawl', 'tavily_research']);
+      'tavily_map', 'tavily_crawl', 'tavily_research', ...ALWAYS_ASK]);
     const requiresApproval = sensitive.has(toolName) || (toolName === 'create_bot' && args?.confirmed === true)
       || (toolName === 'set_heartbeat' && Number(args?.minutes) > 0);
     if (!requiresApproval) return { decision: 'allow', key: toolName, title: toolName };
     const p = db.prepare('SELECT mode FROM policies WHERE user_id=? AND tool=?').get(userId, toolName) as any;
-    const mode = p?.mode ?? 'needs_approval';
+    const mode = ALWAYS_ASK.has(toolName) && p?.mode === 'always_allow' ? 'needs_approval' : (p?.mode ?? 'needs_approval');
     return { decision: mode === 'blocked' ? 'block' : mode === 'always_allow' ? 'allow' : 'ask',
       key: toolName, title: `Botly: ${toolName.replace(/_/g, ' ')}` };
   }

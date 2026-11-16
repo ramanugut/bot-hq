@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useState } from 'react';
 import { disablePush, enablePush, pushEnabled } from '../lib/push';
 import { useConfigUI } from '../configStore';
 import { TasksIsland } from './config/TasksView';
+import { KnowledgeIsland } from './knowledge/KnowledgeIsland';
 import type { Bot, LiveState } from '@shared/types';
 import { activityStatus } from '../lib/phrases';
 import { BotAvatarFor } from '../avatar/BotAvatar';
@@ -59,7 +60,7 @@ export function Sidebar() {
   const bots = useStore((s) => s.bots);
   const live = useStore((s) => s.live);
   const storeSelectedBotId = useStore((s) => s.selectedBotId);
-  const inTasks = useConfigUI((s) => s.view === 'tasks');
+  const inTasks = useConfigUI((s) => s.view !== 'chat');
   const selectedBotId = inTasks ? null : storeSelectedBotId; // nothing highlighted while the Tasks view is open
   const user = useStore((s) => s.user);
   const collapsed = useStore((s) => s.sidebarCollapsed);
@@ -129,6 +130,7 @@ export function Sidebar() {
 
       <div className="sidebar__scroll">
         <TasksIsland />
+        <KnowledgeIsland />
         {primary && collapsed && (
           <div className="pinned">
             <button type="button" className={`pinned__tile${selectedBotId === primary.id ? ' is-selected' : ''}`} onClick={() => selectBot(primary.id)} title={displayName(primary)}>

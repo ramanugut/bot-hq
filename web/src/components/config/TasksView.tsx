@@ -6,6 +6,7 @@ import { relativeShort } from '../../lib/time';
 import { useConfigUI, useVersion } from '../../configStore';
 import { useStore } from '../../store';
 import { Glyph } from './glyphs';
+import { Icon } from '../Icon';
 import './ui';
 
 type Filter = 'all' | 'open' | 'done';
@@ -64,6 +65,7 @@ export function TasksView() {
   return (
     <main className="chat tasks-view">
       <header className="tasks-view__header">
+        <button type="button" className="icon-btn kn__menu" onClick={() => useStore.getState().set({ sidebarCollapsed: false })} aria-label="Show bots"><Icon name="sidebar" size={18} /></button>
         <div className="tasks-view__title">Tasks</div>
         <div className="segmented" role="tablist" aria-label="Filter tasks">
           {([['open', `In progress${counts.open ? ` ${counts.open}` : ''}`], ['done', 'Done'], ['all', 'All']] as [Filter, string][]).map(([f, label]) => (

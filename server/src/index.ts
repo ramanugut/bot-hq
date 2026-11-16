@@ -14,6 +14,7 @@ import { initSubagents } from './agent/subagents.js';
 import { initRooms } from './agent/rooms.js';
 import { checkinsApi } from './routes-proactive.js';
 import { roomsApi } from './routes-rooms.js';
+import { knowledgeApi } from './routes-knowledge.js';
 import { enqueue, expireStaleApprovals, isBotBusy } from './agent/loop.js';
 import { initHeartbeat } from './heartbeat.js';
 import { startScreenSleeper } from './computer.js';
@@ -35,6 +36,7 @@ app.get('/api/health', (c) => c.json({ ok: true, engine: 'hermes' }));
 app.route('/mcp', mcpApi);
 app.route('/api/checkins', checkinsApi);
 app.route('/api/rooms', roomsApi);
+app.route('/api/knowledge', knowledgeApi);
 app.route('/api', api);
 app.route('/api', configApi);
 

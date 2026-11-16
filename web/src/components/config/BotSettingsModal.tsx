@@ -11,6 +11,7 @@ import { Icon } from '../Icon';
 import { Modal } from '../modals/Modal';
 import { Glyph } from './glyphs';
 import { ConfirmButton, Field, Segmented, Switch, nextRunLabel, shortDate } from './ui';
+import { KnowledgeSection } from '../knowledge/KnowledgeSection';
 
 const EFFORTS: { value: Bot['effort']; label: string }[] = [
   { value: 'low', label: 'Low' },
@@ -196,6 +197,8 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
           )}
         </div>
       </section>
+
+      {bot.kind !== 'room' && <KnowledgeSection bot={bot} onClose={onClose} />}
 
       {bot.kind !== 'room' && <HeartbeatSection bot={bot} />}
 

@@ -23,6 +23,7 @@ const ConnectAppsModal = lazy(loaders.apps);
 const CreateBotModal = lazy(loaders.create);
 const CreateGroupModal = lazy(loaders.group);
 const SearchModal = lazy(loaders.search);
+const KnowledgeView = lazy(() => import('./components/knowledge/KnowledgeView').then((m) => ({ default: m.KnowledgeView })));
 
 function prefetchWhenIdle() {
   const run = () => { for (const load of Object.values(loaders)) void load().catch(() => {}); void import('./components/config/ConfigLayer'); };
@@ -93,7 +94,7 @@ function Shell() {
     <div className={`app${collapsed ? ' is-sidebar-collapsed' : ''}${detailsOpen && hasBot && view === 'chat' ? ' has-details' : ''}`}>
       <Sidebar />
       {!collapsed && <div className="drawer-scrim" onClick={() => useStore.getState().set({ sidebarCollapsed: true })} aria-hidden />}
-      {view === 'tasks' ? <TasksView /> : <ChatView />}
+      {view === 'tasks' ? <TasksView /> : view === 'knowledge' ? <Suspense fallback={<main className="chat" />}><KnowledgeView /></Suspense> : <ChatView />}
       {detailsOpen && hasBot && view === 'chat' && <DetailsPanel />}
       <Suspense fallback={null}>
         {modal === 'create' && <CreateBotModal />}

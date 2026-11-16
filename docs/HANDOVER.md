@@ -226,3 +226,23 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
   moving sheen.
 - Avatars: top-lit gradient body, hairline rim instead of the old blur outline (one less filter per avatar), eye glow,
   graphite instead of pure black, and a breathing mint halo while working.
+
+## Company knowledge (16 Nov 2026, branch claude/company-knowledge, not yet merged)
+- Spaces per owner: Company (internal), Customer-safe (what customers may hear), Personal. Created on first use.
+- Storage: `server/src/knowledge.ts`. Entries in SQLite (`knowledge_entries`, `knowledge_revisions`, FTS5 table
+  `knowledge_fts`), every entry mirrored as a Markdown file under `<data>/knowledge/<space>/`, uploaded originals under
+  `<data>/knowledge/files/<entry id>/`. All inside the data folder, so the nightly backup includes it.
+- Uploads (`routes-knowledge.ts`): images, PDF, Word, PowerPoint, Excel, HTML, CSV, JSON, text; 25 MB each. Text comes
+  from MarkItDown, then pdftotext or pandoc. A leading "# Heading" becomes the title. `looksSecret()` holds back
+  passwords, keys and tokens unless the owner confirms (bots are refused outright).
+- Only Teammate bots use it: `mcp.ts` hides the four tools (`search_knowledge`, `read_knowledge`, `use_knowledge_file`,
+  `save_knowledge`) from Personal assistants and each tool refuses them too. Per-bot spaces in `bots.knowledge_spaces`
+  (JSON; NULL = Company + Customer-safe). The prompt tells Teammates their spaces and that only Customer-safe may reach
+  customers.
+- `save_knowledge` always needs approval: `ALWAYS_ASK` in tools.ts ignores an "always allow" policy, `resolveApproval`
+  turns "always" into a single yes, and the card hides the button. The card shows the whole proposed entry.
+- UI: Knowledge page (sidebar, under Tasks; lazy-loaded), Knowledge section in Bot settings. Tasks and Knowledge pages
+  gained a sidebar button on phones.
+- Tested: `tests/knowledge.test.mjs` (search, history, deletion, files, access rules, other owners) and an end-to-end
+  run in a local copy (uploads of PNG, PDF, Word, text; secret warning; MCP calls as a Teammate and a Personal assistant;
+  approvals). Not yet run on the EC2 server. Merge after the non-root bot migration lands.

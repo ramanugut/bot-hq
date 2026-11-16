@@ -17,6 +17,8 @@ function useBusy() {
   return { busy, error, run };
 }
 
+/** Tools that must ask every time (company knowledge): the server never honours "Always allow" for them, so it is not offered. */
+const ALWAYS_ASK = new Set(['save_knowledge']);
 const prettyTool = (s: string) => s.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 const KNOWN: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab', hubspot: 'HubSpot', linkedin: 'LinkedIn', youtube: 'YouTube', clickup: 'ClickUp', googledocs: 'Google Docs', googledrive: 'Google Drive', googlesheets: 'Google Sheets', googlecalendar: 'Google Calendar', googletasks: 'Google Tasks', googlemeet: 'Google Meet' };
 /** "googlecalendar" → "Google Calendar", "slack" → "Slack". */
@@ -45,7 +47,7 @@ export function ApprovalCard({ body }: { body: Card<'approval'> }) {
         <>
           <div className="card__actions">
             <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('deny')}>Don't allow</button>
-            <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('always')}>Always allow</button>
+            {!ALWAYS_ASK.has(body.tool) && <button type="button" className="btn btn--secondary" disabled={!!busy} onClick={() => decide('always')}>Always allow</button>}
             <button type="button" className="btn btn--primary" disabled={!!busy} onClick={() => decide('allow')}>Allow</button>
           </div>
           {error && <div className="card__error">{error}</div>}
