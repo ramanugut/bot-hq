@@ -9,6 +9,7 @@ engines="${ENGINES_DIR:-/opt/botly/data/engines}"
 if [[ "$mode" == --apply ]]; then
   [[ "$(id -u)" == 0 ]] || { echo 'Use root for --apply.' >&2; exit 1; }
   [[ "${BOTLY_SECURITY_CUTOVER:-}" == 'YES' ]] || { echo 'Set BOTLY_SECURITY_CUTOVER=YES after making a verified backup.' >&2; exit 1; }
+  [[ -t 0 ]] || { echo 'Run --apply from your own interactive terminal, not an agent or automation.' >&2; exit 1; }
   if command -v supervisorctl >/dev/null 2>&1 && supervisorctl status botly-app 2>/dev/null | grep -q RUNNING; then
     echo 'Stop the Botly application during provisioning; aborting.' >&2
     exit 1
@@ -27,6 +28,20 @@ try:
     ids = [row[0] for row in conn.execute("SELECT id FROM bots WHERE engine='managed'")]
 finally:
     conn.close()
+
+if mode == "--apply":
+    # Changing ownership while a managed Hermes process is alive is unsafe.
+    for proc in pathlib.Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            env_items = (proc / "environ").read_bytes().split(b"\\0")
+            if any(v.startswith(b"HERMES_HOME=") and
+                   v[len(b"HERMES_HOME="):].decode(errors="ignore").startswith(str(root) + "/")
+                   for v in env_items):
+                sys.exit("A managed Hermes process is still running; stop it before provisioning")
+        except (PermissionError, FileNotFoundError, ProcessLookupError):
+            continue
 
 def validate_tree(root_dir):
     # Do not let recursive ownership changes cross a symlink planted by a bot.
