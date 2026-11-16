@@ -73,6 +73,8 @@ export const env = {
   orgoComputerId: localScreens ? 'local' : process.env.ORGO_COMPUTER_ID ?? '',
   /** This server runs on that computer, so shell commands run locally instead of through Orgo's API. */
   localBox: localScreens || (process.env.BOTLY_LOCAL ?? process.env.HQ_LOCAL) === '1',
+  /** X11 cookie authentication; fails closed on existing unprotected displays. */
+  x11Auth: process.env.BOTLY_X11_AUTH === 'secure',
   /**
    * DevTools URL of a Chrome that already runs on the default screen and belongs to the primary bot
    * (e.g. http://127.0.0.1:9333). When set, we never start or stop that screen's Chrome ourselves.
