@@ -28,7 +28,11 @@ src.backup(dst)
 assert dst.execute('PRAGMA integrity_check').fetchone()[0] == 'ok', 'Invalid SQLite snapshot'
 dst.close(); src.close()
 PY
-tar --warning=no-file-changed -czf "$partial" \
+# Live bot files (browser profiles, Hermes state) change and vanish while tar reads them. GNU tar then exits 1
+# ("some files differ") even with these warnings off. The archive is still complete and is verified below;
+# exit 2 or more is a real failure.
+tar_status=0
+tar --warning=no-file-changed --warning=no-file-removed --warning=no-file-shrank -czf "$partial" \
   --exclude="$db_name" --exclude="$db_name-*" \
   --exclude='*/cache' --exclude='*/Cache' --exclude='*/Code Cache' --exclude='*/GPUCache' --exclude='*/CacheStorage' \
   --exclude='*/logs' --exclude='*/node_modules' --exclude='*/.venv' --exclude='*/venv' --exclude='/root/.hermes/hermes-agent' \
@@ -39,7 +43,8 @@ tar --warning=no-file-changed -czf "$partial" \
   --exclude='*/screen_ai' --exclude='*/hyphen-data' --exclude='*/Subresource Filter' --exclude='*/MEIPreload' \
   --exclude='root/.hermes/cache' --exclude='*/__pycache__' --exclude='*.log' \
   -C "$SOURCE_ROOT" "$app_dir/data" "$app_dir/app/.env" root/.hermes "$library" \
-  -C "$tmp" database-backup.db
+  -C "$tmp" database-backup.db || tar_status=$?
+[ "$tar_status" -le 1 ] || { echo "backup: tar failed (exit $tar_status)" >&2; exit "$tar_status"; }
 # Publish only a complete archive, keeping old backups on any failure.
 tar -tzf "$partial" > "$tmp/contents.txt"
 grep -Fxq "database-backup.db" "$tmp/contents.txt"

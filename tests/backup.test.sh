@@ -36,6 +36,21 @@ fi
 tar -tzf "$archive" >/dev/null
 echo 'Backup snapshot, archive verification and failure retention: OK'
 
+# Files changing during the read make GNU tar exit 1: still a good backup. Exit 2 is a real failure.
+fake="$root/fakebin"; mkdir -p "$fake"
+printf '#!/bin/sh\ncase " $* " in *" -czf "*) "%s" "$@" || exit $?; exit "${FAKE_TAR_EXIT:-1}";; esac\nexec "%s" "$@"\n' "$(command -v tar)" "$(command -v tar)" > "$fake/tar"
+chmod +x "$fake/tar"
+rm -f "$root/out"/botly-*.tar.gz
+printf 'test settings\n' > "$root/opt/botly/app/.env"
+PATH="$fake:$PATH" KEEP=2 bash scripts/backup.sh >/dev/null
+[ -n "$(find "$root/out" -maxdepth 1 -name 'botly-*.tar.gz' -print -quit)" ] || { echo 'ERROR: tar exit 1 lost the backup' >&2; exit 1; }
+rm -f "$root/out"/botly-*.tar.gz
+if PATH="$fake:$PATH" FAKE_TAR_EXIT=2 KEEP=2 bash scripts/backup.sh >/dev/null 2>&1; then
+  echo 'ERROR: Backup unexpectedly succeeded when tar failed' >&2; exit 1
+fi
+[ -z "$(find "$root/out" -maxdepth 1 -name 'botly-*.tar.gz' -print -quit)" ] || { echo 'ERROR: a failed tar published an archive' >&2; exit 1; }
+echo 'Changed files during the backup (tar exit 1) tolerated; real tar failures still fatal: OK'
+
 # The migration reads the old layout and publishes a verified snapshot before moving it.
 mkdir "$root/opt/hq"
 mv "$root/opt/botly/"{data,app} "$root/opt/hq/"

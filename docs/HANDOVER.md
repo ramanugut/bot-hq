@@ -183,3 +183,10 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - `--check` needs PyYAML for the system `python3`; a server without it now gets `apt-get install -y python3-yaml` as the fix.
 - `--apply` refuses to start when a parent process is `supervisord` or a `hermes` program, i.e. from a bot's shell: the cutover
   stops `hq-hermes` and every bot, which would kill the migration halfway. Bots may run the read-only `--check`.
+
+## Backups on a live server (16 Nov 2026)
+- The migration failed twice on EC2 at its backup step, then rolled back cleanly. Cause: GNU tar exits 1 ("some files
+  differ") when live files change or vanish while it reads them, even with those warnings off, and `backup.sh` ran
+  under `set -e`. Reproduced with tar 1.35. The nightly backup had the same flaw.
+- `backup.sh` now treats tar exit 1 as success (the archive is still listed and checked for the database, `.env`,
+  Hermes home and Library before it is published) and exit 2 or more as failure. `tests/backup.test.sh` covers both.
