@@ -161,7 +161,10 @@ export function syncPersona(botId: string) {
   if (!b || b.engine !== 'managed' || b.soul_custom) return;
   const home = homeFor(botId);
   if (!fs.existsSync(home)) return;
-  fs.writeFileSync(path.join(home, 'SOUL.md'), soul(b));
+  const file = path.join(home, 'SOUL.md');
+  const owner = env.restrictedAgents ? requireAgentIdentity(botId, home) : undefined;
+  if (owner) { assertSafeAgentFile(file, home); assertRegularOrMissing(file); }
+  writePrivate(file, soul(b), owner);
 }
 
 // ---------- the soul (SOUL.md): who the bot is, editable in Bot settings ----------
@@ -179,6 +182,11 @@ export function readSoul(botId: string): { text: string; custom: boolean; sugges
   const suggested = b ? soul(b) : '';
   const file = soulFile(botId);
   let text = '';
+  if (file && env.restrictedAgents && b?.engine === 'managed') {
+    const home = homeFor(botId);
+    assertSafeAgentFile(file, home);
+    assertRegularOrMissing(file);
+  }
   try { if (file) text = fs.readFileSync(file, 'utf8'); } catch { /* not written yet */ }
   return { text: text || suggested, custom: !!b?.soul_custom, suggested };
 }
@@ -190,7 +198,10 @@ export function writeSoul(botId: string, text: string | null) {
   if (!b || !file) throw new Error('This bot has no engine yet; send it a message first.');
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const body = text === null ? soul(b) : text.slice(0, SOUL_MAX);
-  fs.writeFileSync(file, body.endsWith('\n') ? body : `${body}\n`);
+  const home = homeFor(botId);
+  const owner = env.restrictedAgents && b.engine === 'managed' ? requireAgentIdentity(botId, home) : undefined;
+  if (owner) { assertSafeAgentFile(file, home); assertRegularOrMissing(file); }
+  writePrivate(file, body.endsWith('\n') ? body : `${body}\n`, owner);
   db.prepare('UPDATE bots SET soul_custom=? WHERE id=?').run(text === null ? 0 : 1, botId);
 }
 
@@ -334,7 +345,15 @@ function gatewayPid(home: string): number | null {
   try { process.kill(pid, 0); } catch { return null; }
   try {
     if (!fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').includes('gateway')) return null;
-  } catch { /* no /proc: trust the pid file */ }
+    if (env.restrictedAgents) {
+      const identity = requireAgentIdentity(path.basename(home), home);
+      const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+      const uids = /^Uid:\s+(\d+)\s+(\d+)/m.exec(status);
+      if (!uids || Number(uids[2]) !== identity.uid) return null;
+      const processEnv = fs.readFileSync(`/proc/${pid}/environ`, 'utf8');
+      if (!processEnv.split('\0').includes(`HERMES_HOME=${home}`)) return null;
+    }
+  } catch { return null; }
   return pid;
 }
 
@@ -365,6 +384,11 @@ function managedUrl(botId: string): string {
 function managedKey(botId: string): string {
   let k = keys.get(botId);
   if (!k) {
+    if (env.restrictedAgents) {
+      const file = path.join(homeFor(botId), '.env');
+      assertSafeAgentFile(file, homeFor(botId));
+      assertRegularOrMissing(file);
+    }
     k = readDotenv(path.join(homeFor(botId), '.env')).API_SERVER_KEY ?? '';
     if (k) keys.set(botId, k);
   }
