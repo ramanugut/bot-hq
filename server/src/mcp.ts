@@ -45,7 +45,7 @@ async function listTools(botId: string | null) {
   const bot = botId ? getBotRow(botId) : null;
   // Show the broker only when it is usable. Never advertise root-level shell
   // operations to the primary bot or to unrestricted installs.
-  const restricted = env.restrictedAgents && bot?.engine === 'managed';
+  const restricted = (env.restrictedAgents && bot?.engine === 'managed') || (env.restrictedPrimary && bot?.engine === 'primary');
   const own = TOOLS.filter((t) => restricted ||
     !['approved_shell', 'approved_browser_action', 'browser_inspect'].includes(t.name))
     .map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
