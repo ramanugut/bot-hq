@@ -63,6 +63,8 @@ export const env = {
   mcpBaseUrl: (process.env.MCP_BASE_URL ?? `http://127.0.0.1:${process.env.PORT ?? 8787}`).replace(/\/+$/, ''),
   /** Extra MCP servers every managed bot gets, as a JSON object of Hermes `mcp_servers` entries (e.g. X's XMCP). */
   extraMcpServers: process.env.EXTRA_MCP_SERVERS ?? '',
+  /** Opt-in: expose Hermes' native Browser Use CLI browser_exec in managed bot API sessions. */
+  browserUseToolsets: process.env.BOTLY_BROWSER_USE_TOOLSETS === '1',
   primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Marvelous',
   primaryBotLabel: process.env.PRIMARY_BOT_LABEL ?? 'Chief of Staff',
 

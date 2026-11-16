@@ -5,6 +5,7 @@ import path from 'node:path';
 import YAML from 'yaml';
 import { displayFor } from './box.js';
 import { cdpUrlFor, screenFor } from './computer.js';
+import { managedApiToolsets } from './browser-use-toolsets.js';
 import { db } from './db.js';
 import { env } from './env.js';
 import type { EngineInfo, EngineProvider } from './types.js';
@@ -204,7 +205,13 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
     for (const k of SHARED_CONFIG) if (primary[k] !== undefined) cfg[k] = primary[k];
     cfg.agent = { reasoning_effort: 'medium' };
   }
-  cfg.platform_toolsets = { ...(cfg.platform_toolsets ?? {}), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
+  // Preserve owner-selected toolsets; opt-in to Hermes' native Browser Use CLI bridge.
+  // browser_exec requires both terminal and browser. It uses the same CDP as Botly's live screen.
+  // WARNING: This is not a security boundary while Hermes runs as root.
+  cfg.platform_toolsets = {
+    ...(cfg.platform_toolsets ?? {}),
+    api_server: managedApiToolsets(cfg.platform_toolsets?.api_server, Boolean(display), env.browserUseToolsets),
+  };
   cfg.terminal = { ...(cfg.terminal ?? {}), cwd };
   // Nobody can answer Hermes' own approval prompts through the app, so a prompt would only time out.
   // BOTLY_AGENT_APPROVALS=off lets bots act on their own screen (Hermes' hard blocks still apply).
