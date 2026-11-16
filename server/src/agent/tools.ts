@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import { safeLibraryReadPath } from '../lib/library-path.js';
 import { runTavily } from '../tavily.js';
 import { spawn } from 'node:child_process';
+import { describePreview, previewProject } from '../lib/video-preview.js';
 
 /** Only one video render at a time across the small EC2 server. */
 const rendering = new Set<string>();
@@ -37,14 +38,29 @@ for (const job of interrupted) {
 
 const hyperframesBin = () => (fs.existsSync('/usr/local/bin/hyperframes') ? '/usr/local/bin/hyperframes' : '/opt/botly/node/bin/hyperframes');
 
+/** HyperFrames runs with this server's Node and Chromium, no telemetry, no update checks and no skill installs. */
+const videoEnv = (): NodeJS.ProcessEnv => ({
+  ...process.env,
+  PATH: `/opt/botly/node/bin:${process.env.PATH ?? ''}`,
+  HYPERFRAMES_NO_TELEMETRY: '1', HYPERFRAMES_NO_UPDATE_CHECK: '1', HYPERFRAMES_SKIP_SKILLS: '1',
+  ...(fs.existsSync('/usr/local/bin/chromium') && !process.env.HYPERFRAMES_BROWSER_PATH ? { HYPERFRAMES_BROWSER_PATH: '/usr/local/bin/chromium' } : {}),
+});
+
+/** A HyperFrames project folder inside the bot's own Library, or why it can't be used. */
+function projectFolder(requested: unknown, botId: string): { folder: string } | { error: string } {
+  const root = `${LIBRARY_ROOT}/${botId}`;
+  let folder: string;
+  try { folder = fs.realpathSync(String(requested || '')); } catch { return { error: `No folder at ${requested}.` }; }
+  let realRoot: string;
+  try { realRoot = fs.realpathSync(root); } catch { return { error: `Your Library (${root}) does not exist yet.` }; }
+  if (!folder.startsWith(realRoot + '/')) return { error: `The project must be inside your Library (${root}/...).` };
+  if (!fs.existsSync(`${folder}/index.html`)) return { error: `${folder} has no index.html. Start one with: hyperframes init ${folder} --example blank --non-interactive --skip-skills --resolution portrait` };
+  return { folder };
+}
+
 /** Run a video render in the background; post the video to the chat (or say why it failed) when it ends. */
 function startRender(botId: string, cmd: string, args: string[], out: string, caption: string, cleanup?: () => void) {
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PATH: `/opt/botly/node/bin:${process.env.PATH ?? ''}`,
-    HYPERFRAMES_NO_TELEMETRY: '1', HYPERFRAMES_NO_UPDATE_CHECK: '1', HYPERFRAMES_SKIP_SKILLS: '1',
-    ...(fs.existsSync('/usr/local/bin/chromium') && !process.env.HYPERFRAMES_BROWSER_PATH ? { HYPERFRAMES_BROWSER_PATH: '/usr/local/bin/chromium' } : {}),
-  };
+  const env = videoEnv();
   const jobId = newId('render');
   db.prepare('INSERT INTO render_jobs(id,bot_id,output,status,started_at) VALUES (?,?,?,?,?)').run(jobId, botId, out, 'running', now());
   const p = spawn(cmd, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
@@ -416,10 +432,9 @@ export const TOOLS: ToolDef[] = [
     impl: async (a, ctx) => {
       if (!box.local) return { output: 'Video rendering runs only on the self-hosted server.' };
       const root = `${LIBRARY_ROOT}/${ctx.botId}`;
-      let folder: string;
-      try { folder = fs.realpathSync(String(a.folder || '')); } catch { return { output: `No folder at ${a.folder}.` }; }
-      if (!folder.startsWith(fs.realpathSync(root) + '/')) return { output: `The project must be inside your Library (${root}/...).` };
-      if (!fs.existsSync(`${folder}/index.html`)) return { output: `${folder} has no index.html. Start one with: hyperframes init ${folder} --example blank --non-interactive --skip-skills --resolution portrait` };
+      const p = projectFolder(a.folder, ctx.botId);
+      if ('error' in p) return { output: p.error };
+      const { folder } = p;
       if (rendering.size) return { output: 'A video is already rendering on this server. Try again after it finishes.' };
       const name = (String(a.filename || 'video.mp4').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]*$/, '') || 'video') + '.mp4';
       const out = `${root}/${name}`;
@@ -427,6 +442,41 @@ export const TOOLS: ToolDef[] = [
       if (a.quality !== 'draft') args.push('--crf', '21', '--max-bitrate', '7M');
       startRender(ctx.botId, hyperframesBin(), args, out, a.caption ? String(a.caption) : name);
       return { output: `Rendering started; it appears in the chat by itself when done (saved as ${out}). Do not wait or render it again.`, summary: 'Rendering the video' };
+    },
+  },
+  {
+    name: 'preview_video_project',
+    description: "Check a HyperFrames video project and preview it before rendering: runs 'hyperframes check' (layout, overlaps, text cut off, contrast, motion, sound) and captures the review sheets (each scene, a strip around every cut, the scenes at phone width). The scene sheet is shown in the chat. Returns the problems found and the sheet paths; look at every sheet, fix every error, and preview again. Takes 1 to 4 minutes.",
+    parameters: obj({
+      folder: { type: 'string', description: 'Project folder inside your Library, e.g. /root/botly/files/<you>/videos/launch' },
+      caption: { type: 'string', description: 'Short line under the preview in the chat, e.g. "Draft 2: slower opening"' },
+    }, ['folder']),
+    activity: 'drafting_file',
+    label: 'Previewing a video',
+    impl: async (a, ctx) => {
+      if (!box.local) return { output: 'Video previews run only on the self-hosted server.' };
+      const p = projectFolder(a.folder, ctx.botId);
+      if ('error' in p) return { output: p.error };
+      const { folder } = p;
+      // Previews use the same single slot as renders: the small server can't do two at once.
+      if (rendering.size) return { output: 'A video is rendering or previewing on this server. Try again after it finishes.' };
+      const slot = `preview:${ctx.botId}`;
+      rendering.add(slot);
+      try {
+        const r = await previewProject(hyperframesBin(), folder, `${folder}/.preview`, videoEnv());
+        const scenes = r.sheets[0];
+        if (scenes) {
+          // A stable name per project, so a new preview replaces the old one in the Library.
+          const shown = `${folder}/.preview/${(folder.split('/').pop() || 'video').replace(/[^a-zA-Z0-9._-]/g, '_')}-preview.jpg`;
+          fs.copyFileSync(scenes, shown);
+          const status = r.errors ? `${r.errors} problem${r.errors === 1 ? '' : 's'} to fix` : 'no errors found';
+          const posted = await postImage(ctx.botId, shown, `${a.caption ? `${String(a.caption).slice(0, 120)} · ` : ''}Preview, ${status}`);
+          if (!posted.ok) console.warn('[video] preview not shown', posted.message);
+        }
+        return { output: describePreview(r, folder), summary: r.errors ? `Preview: ${r.errors} problems` : 'Preview ready' };
+      } finally {
+        rendering.delete(slot);
+      }
     },
   },
   {

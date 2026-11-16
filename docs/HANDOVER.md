@@ -76,7 +76,7 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
   builds a vertical promo: auto-fitting titles, Ken Burns, transitions (zoom/whip/wipe/flash/rise), points, price
   cards with count-up, CTA, story progress bar, word-by-word captions from edge-tts WordBoundary timings.
 - Bots call the `make_promo_video` tool; it renders in the background and posts a playable video card.
-- Server needs `hyperframes@0.9.53` in `/opt/botly/node/bin` (extras.sh installs it) and uses `/usr/local/bin/chromium`
+- Server needs `hyperframes@0.9.58` in `/opt/botly/node/bin` (extras.sh installs it) and uses `/usr/local/bin/chromium`
   via `HYPERFRAMES_BROWSER_PATH`; renders with `--low-memory-mode`, CRF 21. Telemetry off.
 - Fonts (Montserrat, Inter, Playfair Display, Fredoka, Cormorant Garamond: all OFL) and gsap.min.js are vendored in `template/`.
 - Styles (`style`): neon, minimal, editorial, playful, luxury (CSS tokens in index.html + motion table STY in engine.js);
@@ -85,6 +85,22 @@ See the header of `scripts/install-local.sh` (clone, install Hermes + `hermes mo
   any scene can take a `video` background. `make-promo.py --preview DIR` saves one still per scene without rendering.
 - Free-form: `render_video_project` renders a HyperFrames project the bot wrote in its Library; `/usr/local/bin/hyperframes`
   (from extras.sh) is a wrapper with our Node, Chromium and telemetry off.
+
+## Botly Motion Studio (16 Nov 2026, GitHub only)
+- HyperFrames pinned to 0.9.58 (`extras.sh`, `make-promo.py` fallback). The promo engine renders unchanged with it
+  (benchmark briefs 1, 2 and 4 rendered in a sandbox; no voice there because the Microsoft voice service was unreachable).
+- Bigger videos follow `scripts/tools/motion/STUDIO.md`: brief, three storylines, SPEC.md, build, preview, ask, render.
+  It sits on the official HyperFrames skill shipped inside the package at
+  `/opt/botly/node/lib/node_modules/hyperframes/dist/skills/` and overrides it for Botly: the `hyperframes` wrapper,
+  no Studio or desktop app, no HeyGen account, free media only, one job at a time, short 3D shots.
+- New tool `preview_video_project` (`server/src/lib/video-preview.ts`): `hyperframes check --json` plus
+  `snapshot --review` into `<project>/.preview`; posts the scene sheet in the chat and returns findings and sheet paths
+  to the bot. It takes the same single slot as renders. No approval needed (it renders nothing); `render_video_project`
+  still needs approval.
+- The bot prompt sends bigger videos to Motion Studio and forbids rendering a free-form project without a preview.
+- `docs/MOTION-BENCHMARK.md`: scorecard, four briefs with references, "before" specs in `docs/motion-benchmark/`.
+  Keep a video-system change only if the "after" films beat the "before" films.
+- Not yet checked on the EC2 server: render time on the t4g.small (2 ARM cores, 2 GB), and 3D without a GPU.
 
 ## Things learned the hard way
 - `update.sh` runs inside one function so the `git reset` that rewrites it mid-run can't break it.

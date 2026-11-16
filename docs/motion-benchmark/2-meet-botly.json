@@ -1,0 +1,14 @@
+{
+  "style": "neon",
+  "format": "landscape",
+  "brand": { "name": "Botly", "url": "botly", "logo": "/opt/botly/app/web/public/icon-512.png", "accent": "#7CF0C4", "accent2": "#F1F4F8", "deep": "#0F1116" },
+  "voice": "en-ZA-LeahNeural",
+  "captions": true,
+  "scenes": [
+    { "type": "hero", "kicker": "Introducing", "title": "Meet *Botly*", "sub": "AI teammates with their own computers", "say": "Meet Botly: AI teammates with their own computers." },
+    { "type": "phone", "title": "Just ask", "sub": "In plain words, from your phone", "screenshot": "/opt/botly/app/docs/motion-benchmark/botly-app-phone.png", "say": "Hand them a task in plain words, right from your phone." },
+    { "type": "steps", "title": "How it works", "steps": ["You give a task", "Your bot gets to work", "Results land in your chat"], "say": "Your bot opens its own computer, does the work, and reports back." },
+    { "type": "stats", "stats": [{ "value": "24/7", "label": "always working" }, { "value": "4", "label": "bots, one server" }], "say": "They work around the clock, side by side." },
+    { "type": "cta", "title": "Put *Botly* to work", "button": "Start now", "say": "Put Botly to work today." }
+  ]
+}

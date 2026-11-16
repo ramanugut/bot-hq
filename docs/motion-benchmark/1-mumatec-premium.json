@@ -1,0 +1,54 @@
+{
+  "style": "luxury",
+  "format": "landscape",
+  "brand": {
+    "name": "Mumatec Hosting",
+    "url": "mumatechosting.co.za",
+    "accent": "#D9B26F",
+    "accent2": "#F3E3C0",
+    "deep": "#0A0A0A"
+  },
+  "voice": "en-ZA-LukeNeural",
+  "captions": false,
+  "scenes": [
+    {
+      "type": "hero",
+      "kicker": "Mumatec Premium",
+      "title": "Hosting, *refined*",
+      "say": "Some things are simply built better."
+    },
+    {
+      "type": "points",
+      "title": "Made to last",
+      "points": [
+        "Fast local servers",
+        "Daily backups",
+        "People who answer"
+      ],
+      "say": "Fast local servers, daily backups, and people who actually answer."
+    },
+    {
+      "type": "prices",
+      "title": "One plan. *Everything.*",
+      "plans": [
+        {
+          "name": "Premium",
+          "price": "R120",
+          "per": "/mo",
+          "features": [
+            "60 GB",
+            "Free SSL",
+            "Priority support"
+          ]
+        }
+      ],
+      "say": "Premium hosting, from one hundred and twenty rand a month."
+    },
+    {
+      "type": "cta",
+      "title": "Hosting that *just works*",
+      "button": "Choose Premium",
+      "say": "Mumatec. Hosting that just works."
+    }
+  ]
+}

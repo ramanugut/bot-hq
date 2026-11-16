@@ -81,7 +81,7 @@ def hyperframes_cmd():
     for c in (shutil.which('hyperframes'), '/opt/botly/node/bin/hyperframes'):
         if c and os.path.exists(c):
             return [c]
-    return ['npx', '-y', 'hyperframes@0.9.53']
+    return ['npx', '-y', 'hyperframes@0.9.58']
 
 
 def main():

@@ -20,11 +20,14 @@ main() {
   fi
 
   # ---------- HyperFrames: renders the promo videos (HTML + GSAP -> MP4 with this server's Chromium)
-  if [ ! -x /opt/botly/node/bin/hyperframes ] || ! /opt/botly/node/bin/hyperframes --version 2>/dev/null | grep -q '^0\.9\.53'; then
+  if [ ! -x /opt/botly/node/bin/hyperframes ] || ! /opt/botly/node/bin/hyperframes --version 2>/dev/null | grep -q '^0\.9\.58'; then
     echo "Installing the video engine (HyperFrames)..."
-    PATH=/opt/botly/node/bin:$PATH npm i -g --no-audit --no-fund hyperframes@0.9.53 >/var/log/botly/hyperframes.log 2>&1 \
+    PATH=/opt/botly/node/bin:$PATH npm i -g --no-audit --no-fund hyperframes@0.9.58 >/var/log/botly/hyperframes.log 2>&1 \
       && echo "  video engine ready" || { echo "  note: HyperFrames did not install"; tail -5 /var/log/botly/hyperframes.log; }
   fi
+  # Motion Studio (scripts/tools/motion/STUDIO.md) sends bots to the official skill that ships inside the package.
+  [ -f /opt/botly/node/lib/node_modules/hyperframes/dist/skills/hyperframes/SKILL.md ] \
+    || echo "  note: the HyperFrames skill files are missing; Motion Studio will work without its guide"
 
   # A 'hyperframes' command for the bots' terminals: our Node, this server's Chromium, no telemetry.
   cat >/usr/local/bin/hyperframes <<'SH'
