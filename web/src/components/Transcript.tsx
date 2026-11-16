@@ -73,7 +73,7 @@ function Attachments({ botId, items, side }: { botId: string; items: Attachment[
       )}
       {other.map((a) => a.kind === 'audio'
         ? <audio key={a.path} className="attachments__audio" src={url(a.path)} controls preload="metadata" />
-        : <a key={a.path} className="attachments__file" href={url(a.path, false)} download>📎 {a.name}{a.size ? <span> · {a.size < 1e6 ? `${Math.max(1, Math.round(a.size / 1e3))} KB` : `${(a.size / 1e6).toFixed(1)} MB`}</span> : null}</a>)}
+        : <a key={a.path} className="attachments__file" href={url(a.path, false)} download><Icon name="paperclip" size={13} opacity={0.6} /> {a.name}{a.size ? <span> · {a.size < 1e6 ? `${Math.max(1, Math.round(a.size / 1e3))} KB` : `${(a.size / 1e6).toFixed(1)} MB`}</span> : null}</a>)}
     </div>
   );
 }
@@ -99,13 +99,31 @@ const Bubble = memo(function Bubble({ row, side, pos }: { row: Row; side: 'left'
       )}
       <span className="bubble__time">
         {clock(row.createdAt)}
+        {side === 'left' && !b.streaming && b.text && <CopyButton text={b.text} />}
         {side === 'left' && !b.streaming && b.text && typeof speechSynthesis !== 'undefined' && (
-          <button type="button" className="bubble__speak" onClick={() => speak(b.text)} aria-label="Read aloud" title="Read aloud">🔊</button>
+          <button type="button" className="bubble__speak" onClick={() => speak(b.text)} aria-label="Read aloud" title="Read aloud"><Icon name="speaker" size={13} /></button>
         )}
       </span>
     </div>
   );
 });
+
+/** Copies a reply as plain text (without the MEDIA: lines Hermes uses for files) and confirms with a tick. */
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text.replace(/^\s*MEDIA:\S+\s*$/gm, '').trim());
+      setDone(true);
+      setTimeout(() => setDone(false), 1500);
+    } catch { /* clipboard blocked: nothing to confirm */ }
+  };
+  return (
+    <button type="button" className="bubble__speak" onClick={() => void copy()} aria-label={done ? 'Copied' : 'Copy'} title={done ? 'Copied' : 'Copy'}>
+      <Icon name={done ? 'check' : 'copy'} size={13} />
+    </button>
+  );
+}
 
 /** Free read-aloud with the device's own voices (no server, no key). Tap again to stop. */
 function speak(text: string) {
@@ -229,6 +247,9 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  // Messages and cards that arrived while the person was scrolled up, counted for the jump button.
+  const [unseen, setUnseen] = useState(0);
+  const seenCount = useRef(0);
   const items = useMemo(() => buildItems(rows), [rows]);
 
   const running = !!live?.isRunning;
@@ -259,9 +280,16 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
+  const visibleCount = useMemo(() => rows.filter((r) => r.body.type === 'message' || r.body.type === 'card').length, [rows]);
+  useLayoutEffect(() => {
+    if (stick.current) { seenCount.current = visibleCount; setUnseen(0); }
+    else if (visibleCount > seenCount.current) setUnseen(visibleCount - seenCount.current);
+  }, [visibleCount]);
   // Jump to bottom when switching bots.
   useLayoutEffect(() => {
     stick.current = true;
+    seenCount.current = visibleCount;
+    setUnseen(0);
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [bot.id]);
@@ -271,6 +299,7 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
     stick.current = dist < 40;
     setShowJump(dist > 200);
+    if (stick.current) { seenCount.current = visibleCount; setUnseen(0); }
   };
 
   const jump = () => {
@@ -305,9 +334,10 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
         {showActivity && live && <ThinkingBlock bot={bot} live={live} rows={rows} steps={openKey ? 0 : serverSteps} />}
       </div>
     </div>
-      {showJump && (
-        <button type="button" className="jump-btn" onClick={jump} aria-label="Scroll to bottom">
-          <Icon name="arrow_down" size={16} />
+      {(showJump || unseen > 0) && (
+        <button type="button" className={`jump-btn${unseen > 0 ? ' has-new' : ''}`} onClick={jump} aria-label={unseen > 0 ? `${unseen} new, scroll to the latest` : 'Scroll to the latest'}>
+          <Icon name="arrow_down" size={15} />
+          <span>{unseen > 0 ? `${unseen} new` : 'Latest'}</span>
         </button>
       )}
     </div>

@@ -8,7 +8,7 @@ import { BotAvatarFor } from '../avatar/BotAvatar';
 import { displayName, isPhone, useStore } from '../store';
 import { api } from '../lib/api';
 import { Icon } from './Icon';
-import { Menu } from './Menu';
+import { Menu, shortcut } from './Menu';
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -116,7 +116,7 @@ export function Sidebar() {
           {!collapsed && (
             <>
               <span className="sidebar__brand"><img src="/icon.svg" alt="" />Botly</span>
-              <button type="button" className="icon-btn" onClick={() => setModal('search')} aria-label="Search" title="Search (⌘K)">
+              <button type="button" className="icon-btn" onClick={() => setModal('search')} aria-label="Search" title={`Search (${shortcut('⌘K')})`}>
                 <Icon name="search" opacity={0.66} />
               </button>
               <button type="button" className="icon-btn" onClick={() => setModal('create')} aria-label="New Bot" title="New Bot">

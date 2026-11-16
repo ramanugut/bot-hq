@@ -199,3 +199,14 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - Sidebar rows show the live status while a bot works instead of "Working…", and no longer print "Waiting for you:
   Waiting for…". The message box says "Message Marvelous", the phone header shows the name without the role, step counts
   use the body font, and captions wrap to two lines instead of being cut off on phones.
+
+## Small usability fixes (16 Nov 2026)
+- Jump button: a labelled pill ("Latest", or "2 new" in mint when replies arrive while scrolled up), counted from
+  message and card rows in `Transcript.tsx`.
+- Bot replies have a Copy button (strips `MEDIA:` lines) beside read-aloud; on touch screens the time and these buttons
+  stay visible for bot replies because there is no hover.
+- Composer: the second button is "Quick actions" (sparkles icon) so it no longer looks like a second attach button;
+  menus take an `icon` and use line icons instead of emoji; the "Promo video" quick action uses `make_promo_video`
+  (it pointed at the old make-video.py). The send arrow dims when there is nothing to send and no voice chat.
+- Menu shortcut hints show Ctrl on Windows and Linux (`shortcut()` in `Menu.tsx`) and are hidden on touch screens.
+- App logo fallback letters are dark on their white tile (they were invisible in dark mode).

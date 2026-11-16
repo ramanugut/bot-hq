@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import {
-  AppWindow, ArrowDown, ArrowUp, AudioLines, Check, ChevronDown, ChevronRight, Circle, Clock,
+  AppWindow, ArrowDown, ArrowUp, AudioLines, Camera, Check, ChevronDown, ChevronRight, Circle, Clock, Image, Sparkles, Volume2,
   Copy, Ellipsis, Eye, File, Headphones, Maximize2, MessageCircle, MessageSquareText, Mic, Minimize2, Monitor,
   MousePointer2, PanelLeft, Paperclip, Pencil, Plus, RefreshCw, Save, Search, Share2, Square, Star, X,
 } from 'lucide-react';
@@ -13,6 +13,7 @@ const icons = {
   slack: MessageCircle, star: Star, voice_a: AudioLines, voice_b: Headphones, arrow_up: ArrowUp,
   stop: Square, more: Ellipsis, monitor: Monitor, refresh: RefreshCw, eye: Eye,
   pointer: MousePointer2, expand: Maximize2, shrink: Minimize2,
+  sparkles: Sparkles, image: Image, camera: Camera, speaker: Volume2,
 };
 
 export type IconName = keyof typeof icons;

@@ -12,11 +12,11 @@ const MAX_H = 200;
 
 /** Ready-made jobs: the text goes into the message box so you can adjust it before sending. */
 const RECIPES = [
-  { label: '✨ Social media autopilot', prompt: 'Set up a social media autopilot for my business [name, what we sell, prices, website]. Every Monday at 8am: plan 3 posts for the week (Facebook and Instagram), make an image for each with your image tool, write the captions, and show me the drafts here. Only post after I say yes, using the browser on your screen where I am logged in. Use create_routine for the weekly schedule.' },
-  { label: '✨ Job search assistant', prompt: 'Help me find jobs. Profile: [role, years of experience, skills, location or remote, minimum salary]. My CV is attached. Every weekday at 7am: search the job sites (PNet, LinkedIn, Careers24, Indeed SA) for new matching jobs and send me the best 5 with links and why they fit. For any I approve, write a tailored CV and cover letter as PDFs in your Library. Never apply without my yes. Use create_routine for the daily search.' },
-  { label: '✨ Support desk helper', prompt: 'Every morning at 8am, check [my support inbox or ticket system] in the browser on your screen, list the new tickets by urgency, and draft a reply for each. Show me the drafts here and only send the ones I approve. Use create_routine for the daily check.' },
-  { label: '✨ Daily briefing', prompt: 'Every weekday at 7:30am send me a short briefing: the weather in [city], important new emails in my Gmail (open it in your browser), anything on my calendar today, and [anything else]. Keep it to 8 lines. Use create_routine for the schedule.' },
-  { label: '✨ Promo video', prompt: 'Make a 15-second vertical promo video for [product/offer and price]: create 4 images with your image tool, then use make-video.py with short captions and a South African voice-over. Save it to the Library and show me.' },
+  { label: 'Social media autopilot', prompt: 'Set up a social media autopilot for my business [name, what we sell, prices, website]. Every Monday at 8am: plan 3 posts for the week (Facebook and Instagram), make an image for each with your image tool, write the captions, and show me the drafts here. Only post after I say yes, using the browser on your screen where I am logged in. Use create_routine for the weekly schedule.' },
+  { label: 'Job search assistant', prompt: 'Help me find jobs. Profile: [role, years of experience, skills, location or remote, minimum salary]. My CV is attached. Every weekday at 7am: search the job sites (PNet, LinkedIn, Careers24, Indeed SA) for new matching jobs and send me the best 5 with links and why they fit. For any I approve, write a tailored CV and cover letter as PDFs in your Library. Never apply without my yes. Use create_routine for the daily search.' },
+  { label: 'Support desk helper', prompt: 'Every morning at 8am, check [my support inbox or ticket system] in the browser on your screen, list the new tickets by urgency, and draft a reply for each. Show me the drafts here and only send the ones I approve. Use create_routine for the daily check.' },
+  { label: 'Daily briefing', prompt: 'Every weekday at 7:30am send me a short briefing: the weather in [city], important new emails in my Gmail (open it in your browser), anything on my calendar today, and [anything else]. Keep it to 8 lines. Use create_routine for the schedule.' },
+  { label: 'Promo video', prompt: 'Make a 15-second vertical promo video for [product/offer and price] with make_promo_video: 4 scenes, prices, a call to action at the end and a South African voice-over. Make images in the video\'s shape first if you need them.' },
 ];
 const drafts = new Map<string, string>();
 
@@ -164,25 +164,25 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
                 placement="above"
                 onClose={() => setAttachOpen(false)}
                 items={[
-                  { label: '🖼️  Photos & videos', onSelect: () => galleryRef.current?.click() },
-                  { label: '📷  Take a photo', onSelect: () => cameraRef.current?.click() },
-                  { label: '📎  Files', onSelect: () => fileRef.current?.click() },
+                  { label: 'Photos & videos', icon: 'image', onSelect: () => galleryRef.current?.click() },
+                  { label: 'Take a photo', icon: 'camera', onSelect: () => cameraRef.current?.click() },
+                  { label: 'Files', icon: 'file', onSelect: () => fileRef.current?.click() },
                 ]}
               />
             )}
           </span>
           <span className="composer__plus-anchor">
-            <button type="button" className="composer__btn" onClick={() => setMenu(!menu)} aria-label="More actions" aria-expanded={menu}>
-              <Icon name="composer_plus" opacity={0.56} />
+            <button type="button" className="composer__btn" onClick={() => setMenu(!menu)} aria-label="Quick actions" aria-expanded={menu} title="Ready-made tasks, new conversation, connect apps">
+              <Icon name="sparkles" opacity={0.56} />
             </button>
             {menu && (
               <Menu
                 placement="above"
                 onClose={() => setMenu(false)}
                 items={[
-                  ...RECIPES.map((r) => ({ label: r.label, onSelect: () => { setText(r.prompt); requestAnimationFrame(() => ref.current?.focus()); } })),
-                  { label: 'New conversation', onSelect: fresh },
-                  ...(features.apps ? [{ label: 'Connect apps', onSelect: () => setModal('apps') }] : []),
+                  ...RECIPES.map((r) => ({ label: r.label, icon: 'sparkles' as const, onSelect: () => { setText(r.prompt); requestAnimationFrame(() => ref.current?.focus()); } })),
+                  { label: 'New conversation', icon: 'plus' as const, onSelect: fresh },
+                  ...(features.apps ? [{ label: 'Connect apps', icon: 'apps' as const, onSelect: () => setModal('apps') }] : []),
                 ]}
               />
             )}
@@ -239,7 +239,8 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
               className="composer__cta"
               onClick={hasText ? send : features.voice ? () => startCall(bot.id) : () => ref.current?.focus()}
               disabled={(hasText && sending) || uploading > 0}
-              aria-label={hasText ? 'Send' : `Start voice chat with ${bot.name}`}
+              data-idle={!hasText && !features.voice ? '' : undefined}
+              aria-label={hasText ? 'Send' : features.voice ? `Start voice chat with ${bot.name}` : 'Send'}
               title={hasText ? 'Send (Enter)' : 'Start voice chat'}
             >
               <Icon name={hasText || !features.voice ? 'arrow_up' : 'voice_a'} size={16} />
