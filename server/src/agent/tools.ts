@@ -725,14 +725,35 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: 'ask_user',
-    description: 'Ask the user a multiple-choice question when you need a decision before continuing. Ends your turn; their answer arrives as their next message.',
-    parameters: obj({ question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, ['question', 'options']),
+    description: "Ask the user to choose, with buttons in the chat. Use it whenever a task needs their decision between options (storylines, designs, plans, which item, a yes before an action) instead of listing the choices in your reply. Give 2 to 6 short options (a few words each), each with a one-line description, and mark your recommendation. They can also tap 'Something else' and answer in their own words. Ordinary conversation and open questions stay as normal text. Ends your turn; the answer arrives as their next message.",
+    parameters: obj({
+      question: { type: 'string', description: 'One short question, e.g. "Which storyline should I build?"' },
+      options: {
+        type: 'array',
+        description: '2 to 6 choices. Each is a short label, or { label, description } with a one-line description.',
+        items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { label: { type: 'string' }, description: { type: 'string' } }, required: ['label'] }] },
+      },
+      recommended: { type: 'number', description: 'Index of the option you recommend (0 = the first). Put it first when you can.' },
+      multiple: { type: 'boolean', description: 'True when they may pick more than one.' },
+    }, ['question', 'options']),
     activity: 'waiting_for_you',
     label: 'Waiting on you',
     impl: async (a, ctx) => {
-      appendRow(ctx.botId, 'card', { type: 'card', card: 'question', question: a.question, options: (a.options ?? []).slice(0, 6), status: 'pending' });
+      const raw: unknown[] = Array.isArray(a.options) ? a.options.slice(0, 6) : [];
+      const opts = raw.map((o: any) => typeof o === 'string' ? { label: o, description: '' } : { label: String(o?.label ?? ''), description: String(o?.description ?? '') })
+        .map((o) => ({ label: o.label.trim().slice(0, 90), description: o.description.trim().slice(0, 200) }))
+        .filter((o) => o.label);
+      if (opts.length < 2) return { output: 'Give at least two options. For an open question, just ask it in your reply.' };
+      const rec = Number(a.recommended);
+      appendRow(ctx.botId, 'card', {
+        type: 'card', card: 'question', question: String(a.question ?? '').slice(0, 300), status: 'pending',
+        options: opts.map((o) => o.label),
+        ...(opts.some((o) => o.description) ? { details: opts.map((o) => o.description) } : {}),
+        ...(Number.isInteger(rec) && rec >= 0 && rec < opts.length ? { recommended: rec } : {}),
+        ...(a.multiple === true ? { multiple: true } : {}),
+      });
       notifyBot(ctx.botId, `Needs your answer: ${a.question}`, 'question');
-      return { output: 'Question shown to the user. Stop here and wait for their answer.', endTurn: true };
+      return { output: 'Question shown to the user with buttons. Stop here and wait for their answer; do not repeat the options in text.', endTurn: true };
     },
   },
   {

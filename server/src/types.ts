@@ -123,6 +123,12 @@ export type CardBody =
       card: 'question';
       question: string;
       options: string[];
+      /** One line under each option, same order as `options`. */
+      details?: string[];
+      /** Index of the option the bot recommends. */
+      recommended?: number;
+      /** More than one option may be picked. */
+      multiple?: boolean;
       status: 'pending' | 'answered' | 'dismissed';
       answer?: string;
     }

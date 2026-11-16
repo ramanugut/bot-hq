@@ -236,3 +236,13 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - Motion (`base.css`, `puff-*` keyframes): a slow breathing squish anchored at the feet, blinks, glances, a swaying tuft,
   occasional ear flicks; working = squash-and-bounce with a shrinking shadow. All CSS transforms; reduced motion stops it.
 - The app icon (`/icon.svg`) is still the robot; change it separately if the brand should follow.
+
+## Choices as buttons (16 Nov 2026)
+- `ask_user` takes options as labels or `{ label, description }`, a `recommended` index and `multiple`; it refuses fewer
+  than two options. The question card shows a description per option, a "Recommended" tag, "Something else…" (focuses
+  the message box) and, for `multiple`, a Send button (answers joined with ", ").
+- A typed message now answers any pending question card (`answerPendingQuestions` in routes.ts); before, the card kept
+  waiting.
+- The bot prompt and Motion Studio (storylines, render or change) tell bots to offer task choices with `ask_user`
+  instead of listing them in text; ordinary conversation stays text.
+- Also in this round: puff working indicator with a thought bubble, mochi app icon and loading screen, 24 bot colours.

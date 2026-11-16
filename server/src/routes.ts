@@ -383,7 +383,10 @@ api.post('/bots/:id/messages', async (c) => {
   // Group chats dispatch to their member Bots instead of running their own loop.
   if (b.kind === 'room') dispatchRoomMessage(b.id, forBot, enqueue);
   // Any pending question card is answered by a free-text message.
-  else enqueue(b.id, { type: 'user', text: forBot });
+  else {
+    answerPendingQuestions(b.id, typed || 'Sent files');
+    enqueue(b.id, { type: 'user', text: forBot });
+  }
   return c.json({ row });
 });
 
@@ -459,12 +462,27 @@ api.post('/approvals/:id', async (c) => {
   return c.json({ ok: true });
 });
 
+/** A typed reply answers any question card still waiting, so it does not sit there asking forever. */
+function answerPendingQuestions(botId: string, text: string) {
+  const gen = getBotRow(botId)?.generation;
+  const rows = db.prepare("SELECT seq, body FROM rows WHERE bot_id=? AND generation=? AND kind='card' AND body LIKE '%\"card\":\"question\"%' AND body LIKE '%\"status\":\"pending\"%'").all(botId, gen) as { seq: number; body: string }[];
+  for (const r of rows) {
+    try {
+      const body = JSON.parse(r.body);
+      if (body.card === 'question' && body.status === 'pending') updateRow(botId, r.seq, { ...body, status: 'answered', answer: text.slice(0, 500) });
+    } catch { /* not a card we understand */ }
+  }
+}
+
 api.post('/bots/:id/cards/:seq/answer', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const row = getRow(b.id, Number(c.req.param('seq')));
-  const { answer } = await c.req.json<{ answer: string }>();
+  const body = await c.req.json<{ answer?: string; answers?: string[] }>();
   if (!row || row.body.type !== 'card' || row.body.card !== 'question') return c.json({ error: 'not a question' }, 400);
+  // Several picks (a "pick all that apply" question) arrive as a list and read as one answer.
+  const answer = (Array.isArray(body.answers) && body.answers.length ? body.answers.map(String).join(', ') : String(body.answer ?? '')).trim().slice(0, 2000);
+  if (!answer) return c.json({ error: 'empty answer' }, 400);
   updateRow(b.id, row.seq, { ...row.body, status: 'answered', answer });
   appendRow(b.id, 'message', { type: 'message', role: 'user', text: answer });
   enqueue(b.id, { type: 'user', text: `[Answer to "${row.body.question}"] ${answer}` });

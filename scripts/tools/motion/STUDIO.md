@@ -43,8 +43,9 @@ It sits on top of the official HyperFrames skill. Where the two differ, this pag
 1. **Brief.** Product, audience, the one feeling, where it plays (landscape for YouTube or a website, portrait for
    Reels, TikTok and Status), length, must-say lines, real assets. Ask at most three questions; otherwise assume
    and say what you assumed.
-2. **Three storylines** in words only, three to four sentences each, genuinely different films
-   (`references/story.md`). The person picks one, unless they asked for no stops.
+2. **Three storylines** in words only, genuinely different films (`references/story.md`). Offer them with
+   `ask_user`: one option per storyline (a short title as the label, its two-sentence pitch as the description),
+   your pick marked as recommended. Do not list them in your reply as well. Skip this if they asked for no stops.
 3. **SPEC.md** in the project (`references/spec.md`): every adjective as a number (seconds, eases, sizes,
    colours), the shots by time, and the defaults you will not use.
 4. **Build.** One scene per sub-composition. Search the catalog before hand-writing an effect, transition,
@@ -53,7 +54,8 @@ It sits on top of the official HyperFrames skill. Where the two differ, this pag
 5. **Preview.** `preview_video_project`. Open every sheet it lists and look. Fix every error, weigh every
    warning, preview again. Repeat until there are no errors and the sheets pass the scorecard.
 6. **Ask.** The scene sheet is already in the chat. In two lines, say what the film does and what changed since
-   the last preview, then ask to render (skip the question only if they asked for no stops).
+   the last preview, then ask with `ask_user`: "Render it" (recommended) and "Change something first". Skip the
+   question only if they asked for no stops.
 7. **Render** with `render_video_project`, then write the delivery note (`references/review.md`).
 
 ## The Botly scorecard

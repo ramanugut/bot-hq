@@ -325,3 +325,20 @@ body { letter-spacing: 0; text-rendering: optimizeLegibility; }
 @media (prefers-reduced-motion: reduce) {
   .thinking__bubble, .thinking__bubble i, .step__spin { animation: none; }
 }
+
+/* ---------- question cards: tappable choices with a line of detail and a recommendation ---------- */
+.question-card { width: 560px; max-width: 100%; }
+.question-option { align-items: flex-start; gap: 8px; padding: 9px 10px; transition: background-color 120ms, box-shadow 120ms; }
+.question-option__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
+.question-option__label { padding: 0; display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; font-weight: 500; }
+.question-option__detail { font-size: 13px; line-height: 18px; color: var(--color-text-secondary); }
+.question-option__rec {
+  height: 18px; padding: 0 7px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 18px;
+  color: var(--color-text-primary); background: var(--color-accent-soft); box-shadow: inset 0 0 0 0.5px var(--color-accent-ring);
+}
+.question-option.is-recommended:not(:disabled) { box-shadow: inset 0 0 0 1px var(--color-accent-ring); }
+.question-option.is-chosen:not(:disabled) { background: var(--color-bg-active); }
+.question-option.is-chosen:not(:disabled) .question-option__key { background: var(--bot-action, var(--color-primary)); color: var(--bot-on-action, #FFFFFF); border-color: transparent; }
+.question-option--other .question-option__label { font-weight: 400; color: var(--color-text-secondary); }
+.question-card__foot { align-items: center; gap: 8px; }
+.question-card.is-resolved .question-option__detail, .question-card.is-resolved .question-option__rec { opacity: 0.5; }

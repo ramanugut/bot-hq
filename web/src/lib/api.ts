@@ -58,6 +58,7 @@ export const api = {
 
   approve: (approvalId: string, decision: 'allow' | 'always' | 'deny') => req<{ ok: true }>('POST', `/approvals/${approvalId}`, { decision }),
   answer: (id: string, seq: number, answer: string) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/answer`, { answer }),
+  answerMany: (id: string, seq: number, answers: string[]) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/answer`, { answers }),
   dismiss: (id: string, seq: number) => req<{ ok: true }>('POST', `/bots/${id}/cards/${seq}/dismiss`),
 
   routines: (id: string) => req<{ routines: Routine[] }>('GET', `/bots/${id}/routines`),

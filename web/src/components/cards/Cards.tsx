@@ -64,35 +64,67 @@ export function ApprovalCard({ body }: { body: Card<'approval'> }) {
 
 export function QuestionCard({ row, body }: { row: Row; body: Card<'question'> }) {
   const { busy, error, run } = useBusy();
+  const [picked, setPicked] = useState<number[]>([]);
   const pending = body.status === 'pending';
   const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const chosen = (opt: string) => !!body.answer && (body.answer === opt || (body.multiple === true && body.answer.split(', ').includes(opt)));
+  const pick = (i: number) => {
+    if (body.multiple) setPicked((p) => (p.includes(i) ? p.filter((x) => x !== i) : [...p, i]));
+    else run(String(i), () => api.answer(row.botId, row.seq, body.options[i]));
+  };
+  // "Something else": the answer is typed, and the typed message answers the card.
+  const other = () => {
+    const box = document.querySelector<HTMLTextAreaElement>('.composer__input');
+    box?.focus();
+  };
   return (
     <div className={`card question-card${pending ? '' : ' is-resolved'}`}>
       <div className="question-card__head">
         <div className="question-card__q">{body.question}</div>
-        <div className="question-card__hint">{pending ? 'Pick an option or reply in your own words' : body.status === 'dismissed' ? 'Skipped' : 'Answered'}</div>
+        <div className="question-card__hint">
+          {pending ? (body.multiple ? 'Pick all that apply' : 'Tap one, or answer in your own words') : body.status === 'dismissed' ? 'Skipped' : `Answered${body.answer && !body.options.some(chosen) ? `: ${body.answer}` : ''}`}
+        </div>
       </div>
-      <div className="question-card__options">
+      <div className="question-card__options" role={body.multiple ? 'group' : undefined}>
         {body.options.map((opt, i) => {
-          const chosen = body.answer === opt;
+          const on = pending ? picked.includes(i) : chosen(opt);
           return (
             <button
               key={i}
               type="button"
-              className={`question-option${chosen ? ' is-chosen' : ''}`}
+              className={`question-option${on ? ' is-chosen' : ''}${body.recommended === i ? ' is-recommended' : ''}`}
               disabled={!pending || !!busy}
-              onClick={() => run(String(i), () => api.answer(row.botId, row.seq, opt))}
+              aria-pressed={body.multiple ? on : undefined}
+              onClick={() => pick(i)}
             >
-              <span className="question-option__key">{letters[i] ?? i + 1}</span>
-              <span className="question-option__label">{opt}</span>
-              {chosen && <Icon name="check" size={12} opacity={0.6} style={{ marginLeft: 'auto', marginTop: 6 }} />}
+              <span className="question-option__key">{on && body.multiple ? <Icon name="check" size={11} /> : letters[i] ?? i + 1}</span>
+              <span className="question-option__text">
+                <span className="question-option__label">
+                  {opt}
+                  {body.recommended === i && <span className="question-option__rec">Recommended</span>}
+                </span>
+                {body.details?.[i] && <span className="question-option__detail">{body.details[i]}</span>}
+              </span>
+              {!pending && on && <Icon name="check" size={12} opacity={0.6} style={{ marginLeft: 'auto', marginTop: 6 }} />}
             </button>
           );
         })}
+        {pending && (
+          <button type="button" className="question-option question-option--other" disabled={!!busy} onClick={other}>
+            <span className="question-option__key"><Icon name="edit" size={11} /></span>
+            <span className="question-option__text"><span className="question-option__label">Something else…</span></span>
+          </button>
+        )}
       </div>
       {pending && (
         <div className="question-card__foot">
           <button type="button" className="link-btn" disabled={!!busy} onClick={() => run('dismiss', () => api.dismiss(row.botId, row.seq))}>Skip</button>
+          {body.multiple && (
+            <button type="button" className="btn btn--sm btn--bot" disabled={!picked.length || !!busy}
+              onClick={() => run('multi', () => api.answerMany(row.botId, row.seq, picked.sort((x, y) => x - y).map((i) => body.options[i])))}>
+              Send{picked.length ? ` ${picked.length}` : ''}
+            </button>
+          )}
         </div>
       )}
       {error && <div className="card__error">{error}</div>}
