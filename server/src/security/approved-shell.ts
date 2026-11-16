@@ -26,17 +26,32 @@ export async function runApprovedCommand(
   if (!st.isDirectory() || st.isSymbolicLink() || st.uid !== identity.uid || (st.mode & 0o077) !== 0) {
     throw new Error('Agent workspace is missing or not isolated');
   }
+  // Commands MUST execute inside a filesystem + network sandbox. Without
+  // bubblewrap, fail closed: a plain non-root shell could reach every bot's
+  // loopback CDP port and bypass future browser approvals.
+  const sandbox = '/usr/bin/bwrap';
+  const bin = fs.statSync(sandbox);
+  if (!bin.isFile() || bin.uid !== 0 || (bin.mode & 0o111) === 0) {
+    throw new Error('Root-managed bubblewrap is required for approved shell tools');
+  }
+  const args = [
+    '--unshare-user', '--unshare-net', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
+    '--die-with-parent', '--clearenv', '--ro-bind', '/usr', '/usr',
+    '--ro-bind', '/bin', '/bin', '--ro-bind', '/lib', '/lib',
+    ...(fs.existsSync('/lib64') ? ['--ro-bind', '/lib64', '/lib64'] : []),
+    '--ro-bind-try', '/etc/passwd', '/etc/passwd', '--ro-bind-try', '/etc/group', '/etc/group',
+    '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp',
+    '--bind', cwd, '/workspace', '--chdir', '/workspace',
+    '--setenv', 'HOME', '/workspace',
+    '--setenv', 'PATH', '/usr/bin:/bin',
+    '--setenv', 'LANG', 'C.UTF-8',
+    '--', '/bin/bash', '--noprofile', '--norc', '-c', command,
+  ];
   const limit = Math.min(Math.max(1000, timeoutMs), 60_000);
-  const child = spawn('/bin/bash', ['--noprofile', '--norc', '-c', command], {
+  const child = spawn(sandbox, args, {
     uid: identity.uid, gid: identity.gid, cwd, detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      HOME: home,
-      USER: identity.username,
-      LOGNAME: identity.username,
-      PATH: '/usr/local/bin:/usr/bin:/bin',
-      LANG: 'C.UTF-8',
-    },
+    env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8' },
   });
   return new Promise((resolve, reject) => {
     let output = '';
