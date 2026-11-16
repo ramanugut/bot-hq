@@ -7,7 +7,7 @@ import { displayFor } from './box.js';
 import { cdpUrlFor, screenFor } from './computer.js';
 import { db } from './db.js';
 import { env } from './env.js';
-import { assertSafeAgentFile, requireAgentIdentity } from './security/agent-identity.js';
+import { agentUsername, assertSafeAgentFile, requireAgentIdentity } from './security/agent-identity.js';
 import { restrictManagedProfile } from './security/restricted-profile.js';
 import type { EngineInfo, EngineProvider } from './types.js';
 
@@ -234,9 +234,12 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   fs.chmodSync(home, 0o700);
   if (identity) {
     for (const sub of ['logs', 'locks']) {
-      assertSafeAgentFile(path.join(home, sub, '.check'), home);
-      fs.chownSync(path.join(home, sub), identity.uid, identity.gid);
-      fs.chmodSync(path.join(home, sub), 0o700);
+      const dir = path.join(home, sub);
+      assertSafeAgentFile(path.join(dir, '.check'), home);
+      // Work on the opened directory, not on a path the bot could swap.
+      const fd = fs.openSync(dir, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+      try { fs.fchownSync(fd, identity.uid, identity.gid); fs.fchmodSync(fd, 0o700); }
+      finally { fs.closeSync(fd); }
     }
   }
 
@@ -257,8 +260,9 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   fs.mkdirSync(cwd, { recursive: true });
   if (identity) {
     assertSafeAgentFile(path.join(cwd, '.check'), home);
-    fs.chownSync(cwd, identity.uid, identity.gid);
-    fs.chmodSync(cwd, 0o700);
+    const fd = fs.openSync(cwd, fs.constants.O_RDONLY | fs.constants.O_DIRECTORY | fs.constants.O_NOFOLLOW);
+    try { fs.fchownSync(fd, identity.uid, identity.gid); fs.fchmodSync(fd, 0o700); }
+    finally { fs.closeSync(fd); }
   }
 
   const cfgFile = path.join(home, 'config.yaml');
@@ -423,13 +427,15 @@ async function startGateway(botId: string): Promise<void> {
   keys.set(botId, key);
   if (gatewayPid(home)) await stopGateway(botId);
 
-  const logPath = path.join(home, 'logs', 'gateway.out.log');
+  // In restricted mode, only root can traverse the stdout log directory.
+  // A bot must never be able to replace the log path with a symlink.
+  const logDir = '/var/log/botly/agents';
   if (agentIdentity) {
-    assertSafeAgentFile(logPath, home);
-    assertRegularOrMissing(logPath);
+    fs.mkdirSync(logDir, { recursive: true, mode: 0o700 });
+    fs.chmodSync(logDir, 0o700);
   }
+  const logPath = agentIdentity ? path.join(logDir, `${agentUsername(botId)}.log`) : path.join(home, 'logs', 'gateway.out.log');
   const log = fs.openSync(logPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_APPEND | fs.constants.O_NOFOLLOW, 0o600);
-  if (agentIdentity) fs.fchownSync(log, agentIdentity.uid, agentIdentity.gid);
   const child = spawn(env.hermesBin, ['gateway', 'run', '--no-supervise'], {
     cwd: home,
     detached: true,
