@@ -1,5 +1,18 @@
 # Botly security migration — remaining work
 
+## Staged backend implementation (not deployed)
+
+A separate backend-only feature branch prepares **restricted managed agents**:
+dedicated Linux UIDs, a minimal Hermes toolset (never the broad
+`hermes-api-server` preset), and owner-approved CDP and non-root shell tools.
+See [RESTRICTED-AGENTS.md](RESTRICTED-AGENTS.md) for the exact implementation,
+offline provisioning procedure, tests and remaining security weaknesses.
+
+**This does NOT secure the primary root Hermes gateway or remove Xvfb `-ac`.
+It is not production-ready and must not be enabled without a separate approved
+maintenance window and live verification.**
+
+
 This document is a safety plan, not a script that automatically changes a running server.
 The running free-edition install is still configured to execute Hermes and the local
 desktops as root. Browser and shell actions invoked directly inside Hermes do not go

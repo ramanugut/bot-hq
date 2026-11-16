@@ -27,6 +27,6 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run build
-      - run: node --test tests/hardening.test.mjs tests/tavily.test.mjs tests/video-preview.test.mjs
-      - run: bash -n scripts/backup.sh scripts/update.sh
+      - run: node --test tests/hardening.test.mjs tests/tavily.test.mjs tests/video-preview.test.mjs tests/agent-security.test.mjs tests/primary-security.test.mjs
+      - run: bash -n scripts/backup.sh scripts/update.sh scripts/provision-managed-agents.sh
       - run: bash tests/backup.test.sh

@@ -63,6 +63,12 @@ export const env = {
   mcpBaseUrl: (process.env.MCP_BASE_URL ?? `http://127.0.0.1:${process.env.PORT ?? 8787}`).replace(/\/+$/, ''),
   /** Extra MCP servers every managed bot gets, as a JSON object of Hermes `mcp_servers` entries (e.g. X's XMCP). */
   extraMcpServers: process.env.EXTRA_MCP_SERVERS ?? '',
+  /** Restricted managed gateways: separate OS users, minimal tools, Botly MCP approvals. Off until prepared. */
+  restrictedAgents: process.env.BOTLY_AGENT_SECURITY_MODE === 'restricted',
+  /** Primary Hermes is a separately provisioned non-root process with a restricted tool profile. */
+  restrictedPrimary: process.env.BOTLY_PRIMARY_SECURITY_MODE === 'restricted',
+  /** Opt-in only after a live bubblewrap deny-path test; never raw host bash. */
+  shellSandbox: process.env.BOTLY_SHELL_SANDBOX === 'bubblewrap',
   primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Marvelous',
   primaryBotLabel: process.env.PRIMARY_BOT_LABEL ?? 'Chief of Staff',
 
@@ -71,6 +77,8 @@ export const env = {
   orgoComputerId: localScreens ? 'local' : process.env.ORGO_COMPUTER_ID ?? '',
   /** This server runs on that computer, so shell commands run locally instead of through Orgo's API. */
   localBox: localScreens || (process.env.BOTLY_LOCAL ?? process.env.HQ_LOCAL) === '1',
+  /** X11 cookie authentication; fails closed on existing unprotected displays. */
+  x11Auth: process.env.BOTLY_X11_AUTH === 'secure',
   /**
    * DevTools URL of a Chrome that already runs on the default screen and belongs to the primary bot
    * (e.g. http://127.0.0.1:9333). When set, we never start or stop that screen's Chrome ourselves.

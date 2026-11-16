@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from './env.js';
+import { createScreenAuthority, isSecureXvfbCommand, xauthorityFor } from './security/x11-auth.js';
 import type { OrgoComputer, OrgoScreen } from './orgo.js';
 
 /**
@@ -37,19 +38,28 @@ export const vncPortFor = (n: number) => 5900 + n;
 const displayOf = (screenId: string) => (screenId === 'default' ? 99 : Number(screenId.replace('screen-', '')));
 const idOf = (n: number) => (n === 99 ? 'default' : `screen-${n}`);
 
-function run(cmd: string, args: string[], timeoutMs = 10_000): Promise<{ code: number; out: Buffer }> {
+function run(cmd: string, args: string[], timeoutMs = 10_000, display?: number): Promise<{ code: number; out: Buffer }> {
   return new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer' }, (err, stdout) => {
+    const auth = env.x11Auth && display ? { XAUTHORITY: xauthorityFor(stateDir(), display) } : {};
+    execFile(cmd, args, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, encoding: 'buffer', env: { ...process.env, ...auth } }, (err, stdout) => {
       resolve({ code: err ? (typeof (err as any).code === 'number' ? (err as any).code : 1) : 0, out: stdout as Buffer });
     });
   });
 }
 
-const alive = async (n: number) => (await run('xdpyinfo', ['-display', `:${n}`], 5000)).code === 0;
+const alive = async (n: number) => (await run('xdpyinfo', ['-display', `:${n}`], 5000, n)).code === 0;
 
 function detached(cmd: string, args: string[], extraEnv: Record<string, string> = {}) {
   const log = fs.openSync(path.join(stateDir(), `${path.basename(cmd)}-${extraEnv.DISPLAY ?? args[0]}.log`.replace(/:/g, '')), 'a');
-  const p = spawn(cmd, args, { detached: true, stdio: ['ignore', log, log], env: { ...process.env, ...extraEnv } });
+  // Desktop processes must not inherit the web server's session secrets.
+  const cleanEnv: NodeJS.ProcessEnv = {
+    PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin',
+    HOME: process.env.HOME ?? '/root',
+    USER: process.env.USER ?? 'root',
+    LANG: process.env.LANG ?? 'C.UTF-8',
+    ...extraEnv,
+  };
+  const p = spawn(cmd, args, { detached: true, stdio: ['ignore', log, log], env: cleanEnv });
   p.unref();
 }
 
@@ -63,13 +73,23 @@ function ensureDisplay(n: number): Promise<void> {
   if (busy) return busy;
   const p = (async () => {
     fs.mkdirSync(stateDir(), { recursive: true, mode: 0o700 });
-    if (!(await alive(n))) {
+    const authPath = env.x11Auth ? xauthorityFor(stateDir(), n) : '';
+    const wasAlive = await alive(n);
+    if (wasAlive && env.x11Auth) {
+      // Do not silently adopt an earlier Xvfb running with -ac.
+      const processes = (await run('pgrep', ['-af', 'Xvfb'], 4000)).out.toString().split('\n');
+      const secure = processes.some((line) => isSecureXvfbCommand(line.replace(/^\d+\s+/, ''), n, authPath));
+      if (!secure) throw new Error(`screen :${n} is still running without checked X11 authentication; schedule a desktop restart`);
+    }
+    if (!wasAlive) {
       const [w, h] = ((process.env.BOTLY_SCREEN_SIZE ?? process.env.BOTLY_SCREEN_SIZE) ?? '1280x800').split('x');
-      detached('Xvfb', [`:${n}`, '-screen', '0', `${w}x${h}x24`, '-nolisten', 'tcp', '-ac']);
+      if (env.x11Auth) createScreenAuthority(stateDir(), n);
+      detached('Xvfb', [`:${n}`, '-screen', '0', `${w}x${h}x24`, '-nolisten', 'tcp',
+        ...(env.x11Auth ? ['-auth', authPath] : ['-ac'])]);
       for (let i = 0; i < 50 && !(await alive(n)); i++) await new Promise((r) => setTimeout(r, 200));
-      if (!(await alive(n))) throw new Error(`screen :${n} did not start (is Xvfb installed?)`);
+      if (!(await alive(n))) throw new Error(`screen :${n} did not start (check X11 cookie and Xvfb installation)`);
       const wm = (await which('openbox')) ? 'openbox' : (await which('xfwm4')) ? 'xfwm4' : '';
-      if (wm) detached(wm, [], { DISPLAY: `:${n}` });
+      if (wm) detached(wm, [], { DISPLAY: `:${n}`, ...(env.x11Auth ? { XAUTHORITY: authPath } : {}) });
     }
     const port = vncPortFor(n);
     const passFile = path.join(stateDir(), 'vnc.rfbauth');
@@ -82,7 +102,8 @@ function ensureDisplay(n: number): Promise<void> {
     const listening = (await run('bash', ['-c', `ss -ltn 'sport = :${port}' | grep -q LISTEN`])).code === 0;
     if (!listening) {
       if (!fs.existsSync(passFile)) await run('x11vnc', ['-storepasswd', localVncPassword(), passFile]);
-      detached('x11vnc', ['-display', `:${n}`, '-rfbport', String(port), '-localhost', '-forever', '-shared', '-rfbauth', passFile, '-noxdamage', '-quiet'], { DISPLAY: `:${n}` });
+      detached('x11vnc', ['-display', `:${n}`, '-rfbport', String(port), '-localhost', '-forever', '-shared', '-rfbauth', passFile, '-noxdamage', '-quiet',
+        ...(env.x11Auth ? ['-auth', authPath] : [])], { DISPLAY: `:${n}`, ...(env.x11Auth ? { XAUTHORITY: authPath } : {}) });
       for (let i = 0; i < 30; i++) {
         if ((await run('bash', ['-c', `ss -ltn 'sport = :${port}' | grep -q LISTEN`])).code === 0) break;
         await new Promise((r) => setTimeout(r, 200));
@@ -94,7 +115,7 @@ function ensureDisplay(n: number): Promise<void> {
 }
 
 async function size(n: number): Promise<{ width: number; height: number }> {
-  const r = await run('xdpyinfo', ['-display', `:${n}`], 5000);
+  const r = await run('xdpyinfo', ['-display', `:${n}`], 5000, n);
   const m = r.out.toString().match(/dimensions:\s+(\d+)x(\d+)/);
   return m ? { width: Number(m[1]), height: Number(m[2]) } : { width: 0, height: 0 };
 }
@@ -142,7 +163,7 @@ export const localScreens = {
 
   screenshot: async (_id: string, screen?: string) => {
     const n = displayOf(screen ?? 'default');
-    const r = await run('import', ['-display', `:${n}`, '-window', 'root', '-quality', '75', 'jpeg:-'], 15_000);
+    const r = await run('import', ['-display', `:${n}`, '-window', 'root', '-quality', '75', 'jpeg:-'], 15_000, n);
     if (r.code !== 0 || !r.out.length) throw new Error(`screenshot of :${n} failed`);
     const s = await size(n);
     return { image: r.out.toString('base64'), mime_type: 'image/jpeg', ...s };
