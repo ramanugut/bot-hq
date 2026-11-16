@@ -8,6 +8,7 @@ import { ThinkingBlock } from './ActivityLine';
 import { CardRow } from './cards/Cards';
 import { Icon } from './Icon';
 import { Markdown } from './Markdown';
+import { stepIcon } from '../lib/stepIcon';
 
 type Item =
   | { kind: 'divider'; key: string; ts: number }
@@ -78,10 +79,10 @@ function Attachments({ botId, items, side }: { botId: string; items: Attachment[
   );
 }
 
-const Bubble = memo(function Bubble({ row, side, pos }: { row: Row; side: 'left' | 'right'; pos: string }) {
+const Bubble = memo(function Bubble({ row, side, pos, fresh }: { row: Row; side: 'left' | 'right'; pos: string; fresh?: boolean }) {
   const b = row.body as MessageBody;
   return (
-    <div className={`bubble-wrap is-${side}`}>
+    <div className={`bubble-wrap is-${side}${fresh ? ' is-fresh' : ''}`}>
       {b.attachments && b.attachments.length > 0 && <Attachments botId={row.botId} items={b.attachments} side={side} />}
       {(b.text || b.streaming || !b.attachments?.length) && (
       <div className={`bubble is-${side === 'right' ? 'user' : 'agent'}${pos}${b.streaming ? ' is-streaming' : ''}`}>
@@ -174,9 +175,12 @@ function StepRow({ call }: { call: ToolCallBody }) {
   const [open, setOpen] = useState(false);
   const args = argsText(call.args);
   const note = STEP_NOTE[call.status];
+  const Glyph = stepIcon(call.name);
   const body = (
     <>
-      <span className="step__mark" aria-hidden>{call.status === 'running' ? <span className="step__spin" /> : <span className="step__dot" />}</span>
+      <span className="step__mark" aria-hidden>
+        {call.status === 'running' ? <span className="step__spin" /> : call.status === 'done' ? <Glyph className="step__glyph" size={13} strokeWidth={1.6} /> : <span className="step__dot" />}
+      </span>
       <span className="step__label">{call.label || call.name}</span>
       {call.summary && <span className="step__summary">{call.summary}</span>}
       {note && <span className="step__note">{note}</span>}
@@ -197,7 +201,7 @@ function StepRow({ call }: { call: ToolCallBody }) {
  * A run of tool calls, folded into one chip. While the turn runs it shows what the bot is doing right
  * now and the step count; afterwards it reads "Worked for 2m 10s · 7 steps". Click to see every step.
  */
-function Steps({ item, active, open: unfinished, extra }: {
+function Steps({ item, active, open: unfinished, extra, fresh }: {
   item: Extract<Item, { kind: 'steps' }>;
   /** The bot is working on this run of steps right now. */
   active: boolean;
@@ -205,6 +209,8 @@ function Steps({ item, active, open: unfinished, extra }: {
   open: boolean;
   /** Steps the server has counted that have no row yet. */
   extra: number;
+  /** Arrived after the chat loaded: it slides in. */
+  fresh?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const calls = item.rows.map((r) => r.body as ToolCallBody);
@@ -214,7 +220,7 @@ function Steps({ item, active, open: unfinished, extra }: {
   const worked = unfinished ? null : workedMs(item);
   const flag = calls.some((c) => c.status === 'awaiting-approval') ? 'waiting' : calls.some((c) => c.status === 'error' || c.status === 'denied') ? 'problem' : null;
   return (
-    <div className={`steps${open ? ' is-open' : ''}${active ? ' is-active' : ''}`}>
+    <div className={`steps${open ? ' is-open' : ''}${active ? ' is-active' : ''}${fresh ? ' is-fresh' : ''}`}>
       <button type="button" className="steps__toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
         {active ? (
           // What the bot is doing right now is shown once, in the status line below; the chip only counts.
@@ -233,11 +239,12 @@ function Steps({ item, active, open: unfinished, extra }: {
   );
 }
 
-function SystemRow({ row }: { row: Row }) {
+function SystemRow({ row, fresh }: { row: Row; fresh?: boolean }) {
   const b = row.body;
-  if (b.type === 'event') return <div className="system-event">{b.text}</div>;
-  if (b.type === 'notice') return <div className={`notice is-${b.tone ?? 'info'}`}>{b.text}</div>;
-  if (b.type === 'card') return <CardRow row={row} />;
+  const f = fresh ? ' is-fresh' : '';
+  if (b.type === 'event') return <div className={`system-event${f}`}>{b.text}</div>;
+  if (b.type === 'notice') return <div className={`notice is-${b.tone ?? 'info'}${f}`}>{b.text}</div>;
+  if (b.type === 'card') return <div className={`card-row${f}`}><CardRow row={row} /></div>;
   return null;
 }
 
@@ -251,6 +258,14 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
   const [unseen, setUnseen] = useState(0);
   const seenCount = useRef(0);
   const items = useMemo(() => buildItems(rows), [rows]);
+  // Rows already there when a chat opens appear at once; only rows that arrive afterwards slide in.
+  const settledSeq = useRef<number | null>(null);
+  const settledBot = useRef(bot.id);
+  if (settledBot.current !== bot.id) { settledBot.current = bot.id; settledSeq.current = null; }
+  const isFresh = (seq: number) => settledSeq.current !== null && seq > settledSeq.current;
+  useLayoutEffect(() => {
+    if (loaded && settledSeq.current === null) settledSeq.current = rows.reduce((m, r) => Math.max(m, r.seq), 0);
+  }, [loaded, rows, bot.id]);
 
   const running = !!live?.isRunning;
   const waiting = isWaitingForYou(live);
@@ -310,22 +325,22 @@ export function Transcript({ bot, rows, live, loaded }: Props) {
   return (
     <div className="transcript-wrap">
     <div className="transcript" ref={scrollRef} onScroll={onScroll}>
-      <div className="transcript__col">
+      <div className="transcript__col" key={bot.id}>
         {loaded && rows.length === 0 && <EmptyChat bot={bot} />}
         {items.map((it) => {
           switch (it.kind) {
             case 'divider':
               return <div key={it.key} className="divider">{dividerLabel(it.ts)}</div>;
             case 'steps':
-              return <Steps key={it.key} item={it} active={it.key === activeKey} open={it.key === openKey} extra={extraSteps} />;
+              return <Steps key={it.key} item={it} active={it.key === activeKey} open={it.key === openKey} extra={extraSteps} fresh={isFresh(it.rows[0].seq)} />;
             case 'row':
-              return <SystemRow key={it.key} row={it.row} />;
+              return <SystemRow key={it.key} row={it.row} fresh={isFresh(it.row.seq)} />;
             case 'group':
               return (
                 <div key={it.key} className={`group is-${it.side}`}>
                   {it.from && <SenderLabel from={it.from} />}
                   {it.rows.map((r, i) => (
-                    <Fragment key={r.seq}><Bubble row={r} side={it.side} pos={cornerClass(i, it.rows.length)} /></Fragment>
+                    <Fragment key={r.seq}><Bubble row={r} side={it.side} pos={cornerClass(i, it.rows.length)} fresh={isFresh(r.seq)} /></Fragment>
                   ))}
                 </div>
               );

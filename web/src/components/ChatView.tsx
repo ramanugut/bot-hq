@@ -19,6 +19,7 @@ export function ChatView() {
   const chatsOpen = useStore((s) => s.chatsOpen);
   const set = useStore((s) => s.set);
   const [menu, setMenu] = useState(false);
+  const working = !!live?.isRunning;
   const [toast, setToast] = useState<string | null>(null);
   const rows = useMemo(() => sortedRows(transcript), [transcript]);
 
@@ -42,7 +43,7 @@ export function ChatView() {
           <Icon name="sidebar" size={18} />
         </button>
         <span className="chat__pill-anchor">
-          <button type="button" className="chat__pill" onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}>
+          <button type="button" className={`chat__pill${working ? ' is-working' : ''}`} onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}>
             <BotAvatarFor bot={bot} size={24} />
             <span className="chat__pill-name" title={displayName(bot)}>{bot.name}{bot.label && <span className="chat__pill-label"> · {bot.label}</span>}</span>
           </button>

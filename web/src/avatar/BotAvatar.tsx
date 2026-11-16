@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { AvatarColor, AvatarShape, Bot } from '@shared/types';
 import { palette } from '../lib/colors';
 import { Icon } from '../components/Icon';
@@ -48,7 +49,7 @@ const ROBOTS: Record<string, Robot> = {
   },
   // Round head with big ear pods (headphones).
   clover: {
-    head: (f, d) => <><path d="M18 50 A32 32 0 0 1 82 50" stroke={d} strokeWidth={5} fill="none" opacity={0.5} /><circle cx={50} cy={58} r={32} fill={f} /><rect x={4} y={44} width={16} height={30} rx={8} fill={f} /><rect x={80} y={44} width={16} height={30} rx={8} fill={f} /></>,
+    head: (f) => <><path d="M18 50 A32 32 0 0 1 82 50" stroke={f} strokeWidth={5} fill="none" opacity={0.7} /><circle cx={50} cy={58} r={32} fill={f} /><rect x={4} y={44} width={16} height={30} rx={8} fill={f} /><rect x={80} y={44} width={16} height={30} rx={8} fill={f} /></>,
     visor: { x: 28, y: 44, w: 44, h: 28, r: 14 },
   },
   // Helmet with a wide visor.
@@ -128,10 +129,16 @@ interface Props {
 
 export function BotAvatar({ shape, color, size, star, ring, className, title, working, still }: Props) {
   const robot = robotFor(String(shape));
-  const fill = palette(color).fill;
-  const darkBody = isDark(fill);
-  const visorFill = darkBody ? '#2B2F38' : '#14161B';
-  const eye = darkBody ? '#7CF0C4' : '#9FF5D6';
+  // Pure black reads as a hole on a dark screen: black robots are graphite instead.
+  const base = palette(color).fill.toUpperCase() === '#000000' ? '#262A32' : palette(color).fill;
+  const darkBody = isDark(base);
+  const visorFill = darkBody ? '#0E1014' : '#14161B';
+  const eye = '#8FF3CF';
+  // Soft top light: a lighter crown fading to a slightly deeper chin, the same for every part of the head.
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const bodyId = `rb${uid}`;
+  const glowId = `rg${uid}`;
+  const fill = `url(#${bodyId})`;
   const r = seed(`${title ?? ''}${shape}${color}`);
   // Negative delays start each bot part-way through its loop; durations differ a little per bot.
   const timing = {
@@ -151,10 +158,23 @@ export function BotAvatar({ shape, color, size, star, ring, className, title, wo
       aria-label={title}
     >
       <svg width={size} height={size} viewBox="-4 -4 108 108" style={{ overflow: 'visible' }} aria-hidden>
+        <defs>
+          <linearGradient id={bodyId} gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="96">
+            <stop offset="0" stopColor={shade(base, darkBody ? 0.16 : 0.22)} />
+            <stop offset="0.55" stopColor={base} />
+            <stop offset="1" stopColor={shade(base, -0.16)} />
+          </linearGradient>
+          <radialGradient id={glowId}>
+            <stop offset="0" stopColor={eye} stopOpacity="0.5" />
+            <stop offset="1" stopColor={eye} stopOpacity="0" />
+          </radialGradient>
+        </defs>
         {ring && <circle cx={50} cy={52} r={54} fill="none" stroke="#1C1C1C3D" strokeWidth={4} />}
         <g className="robot__body">
-          {robot.head(fill, visorFill)}
+          {/* A hairline rim keeps every colour, dark ones included, distinct from the page. */}
+          <g className="robot__head">{robot.head(fill, visorFill)}</g>
           <rect x={v.x} y={v.y} width={v.w} height={v.h} rx={v.r} fill={visorFill} />
+          <ellipse className="robot__glow" cx={v.x + v.w / 2} cy={cy} rx={v.w * 0.46} ry={v.h * 0.5} fill={`url(#${glowId})`} />
           <g className="robot__eyes">
             <rect className="robot__eye" x={v.x + v.w * 0.3 - eyeW / 2} y={cy - eyeH / 2} width={eyeW} height={eyeH} rx={eyeW / 2} fill={eye} />
             <rect className="robot__eye" x={v.x + v.w * 0.7 - eyeW / 2} y={cy - eyeH / 2} width={eyeW} height={eyeH} rx={eyeW / 2} fill={eye} />
@@ -169,6 +189,17 @@ export function BotAvatar({ shape, color, size, star, ring, className, title, wo
       )}
     </span>
   );
+}
+
+/** Mix a #rrggbb colour towards white (amount > 0) or black (amount < 0). */
+function shade(hex: string, amount: number): string {
+  const m = /^#?([0-9a-f]{6})/i.exec(hex);
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  const to = amount > 0 ? 255 : 0;
+  const a = Math.abs(amount);
+  const ch = (c: number) => Math.round(c + (to - c) * a).toString(16).padStart(2, '0');
+  return `#${ch((n >> 16) & 255)}${ch((n >> 8) & 255)}${ch(n & 255)}`;
 }
 
 function isDark(hex: string): boolean {

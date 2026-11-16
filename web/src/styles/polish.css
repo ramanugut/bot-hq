@@ -233,3 +233,61 @@ body { letter-spacing: 0; text-rendering: optimizeLegibility; }
 @media (hover: none) { .bubble-wrap.is-left .bubble__time { opacity: 0.85; transform: none; } }
 .bubble__speak { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 22px; height: 22px; padding: 0; margin-left: 4px; }
 .attachments__file { align-items: center; }
+
+/* ---------- motion: calm, short, and only for what is new ---------- */
+:root { --ease-soft: cubic-bezier(0.22, 0.8, 0.24, 1); }
+@keyframes msg-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes msg-in-right { from { opacity: 0; transform: translate(6px, 6px); } to { opacity: 1; transform: none; } }
+@keyframes chat-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* A new message, card or run of steps slides in; what was already there when the chat opened does not. */
+.is-fresh { animation: msg-in 280ms var(--ease-soft) both; }
+.bubble-wrap.is-right.is-fresh { animation-name: msg-in-right; }
+/* The live "working" line arrives the same way. */
+.thinking { animation: msg-in 280ms var(--ease-soft) both; }
+/* Switching bots: the new chat settles in instead of snapping. */
+.transcript__col { animation: chat-in 220ms var(--ease-soft) both; }
+/* Small presses feel physical. */
+.composer__btn, .composer__cta, .icon-btn, .jump-btn, .chat__pill, .steps__toggle { transition: transform 120ms var(--ease-soft), background-color 140ms, opacity 140ms; }
+.composer__btn:active, .composer__cta:active:not(:disabled), .icon-btn:active, .jump-btn:active, .chat__pill:active, .steps__toggle:active { transform: scale(0.95); }
+.jump-btn:active { transform: translateX(-50%) scale(0.95); }
+@media (prefers-reduced-motion: reduce) {
+  .is-fresh, .thinking, .transcript__col { animation: none; }
+}
+.card-row { max-width: 100%; }
+
+/* ---------- live work: visible from anywhere in the chat ---------- */
+@keyframes pill-glow { 0%, 100% { box-shadow: 0 0 0 1px var(--color-accent-ring), 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 1px var(--color-accent-ring), 0 0 18px -2px var(--color-accent-ring); } }
+.chat__pill.is-working { animation: pill-glow 2.6s ease-in-out infinite; }
+/* Each finished step shows what kind of work it was. */
+.step__glyph { color: var(--color-text-tertiary); }
+.step.is-done .step__row:hover .step__glyph { color: var(--color-text-secondary); }
+.step__mark { width: 14px; height: 14px; }
+/* The step running now has a soft light passing over its label. */
+@keyframes label-sheen { from { background-position: 120% 0; } to { background-position: -20% 0; } }
+.step.is-running .step__label {
+  background: linear-gradient(90deg, var(--color-text-secondary) 0%, var(--color-text-secondary) 40%, var(--color-ink) 50%, var(--color-text-secondary) 60%, var(--color-text-secondary) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: label-sheen 1.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat__pill.is-working, .step.is-running .step__label { animation: none; }
+  .step.is-running .step__label { color: var(--color-text-primary); background: none; }
+}
+
+/* ---------- avatars: lit, rimmed, calm ---------- */
+.robot__head { stroke: #00000014; stroke-width: 1.5; }
+:root[data-theme='dark'] .robot__head { stroke: #FFFFFF26; }
+/* The rim replaces the old blur outline, which cost a filter pass per avatar. */
+:root[data-theme='dark'] .robot__body { filter: none; }
+.robot__glow { opacity: 0.55; transition: opacity 300ms; }
+.robot.is-working .robot__glow { animation: robot-glow-breathe 1.6s ease-in-out infinite; }
+@keyframes robot-glow-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+/* Working: a soft mint halo breathes around the bot, wherever its avatar appears. */
+.bot-avatar.is-working::before {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, var(--color-accent-ring), transparent);
+  animation: avatar-halo 2.4s ease-in-out infinite;
+}
+@keyframes avatar-halo { 0%, 100% { opacity: 0.25; transform: scale(0.94); } 50% { opacity: 0.9; transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .bot-avatar.is-working::before, .robot.is-working .robot__glow { animation: none; } }
+.bot-avatar.is-working { isolation: isolate; } .bot-avatar.is-working::before { z-index: -1; }

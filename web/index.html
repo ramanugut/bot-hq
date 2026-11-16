@@ -10,9 +10,26 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <title>Botly</title>
+    <script>
+      // Paint the saved theme before anything else loads, so there is no white flash.
+      try {
+        var t = localStorage.getItem('botly.theme');
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        document.documentElement.dataset.theme = t;
+        document.documentElement.style.colorScheme = t;
+      } catch (e) {}
+    </script>
+    <style>
+      html, body { margin: 0; height: 100%; background: #FAFBFC; }
+      html[data-theme='dark'], html[data-theme='dark'] body { background: #0F1116; }
+      .splash { height: 100%; display: flex; align-items: center; justify-content: center; }
+      .splash img { width: 44px; height: 44px; border-radius: 12px; opacity: 0; animation: splash 1.6s ease-in-out 0.15s infinite; }
+      @keyframes splash { 0%, 100% { opacity: 0.35; transform: scale(0.97); } 50% { opacity: 0.9; transform: scale(1); } }
+      @media (prefers-reduced-motion: reduce) { .splash img { animation: none; opacity: 0.7; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="splash" aria-label="Loading Botly"><img src="/icon.svg" alt="" /></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

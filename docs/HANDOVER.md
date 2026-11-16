@@ -210,3 +210,19 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
   (it pointed at the old make-video.py). The send arrow dims when there is nothing to send and no voice chat.
 - Menu shortcut hints show Ctrl on Windows and Linux (`shortcut()` in `Menu.tsx`) and are hidden on touch screens.
 - App logo fallback letters are dark on their white tile (they were invisible in dark mode).
+
+## Speed, motion, live work and avatars (16 Nov 2026)
+- Speed: Caddy in front does not compress, and the app sent 512 kB JS + 110 kB CSS raw on every visit. Now
+  `web/scripts/precompress.mjs` writes .br/.gz after `vite build`; `server/src/index.ts` serves them (`precompressed`)
+  with `Cache-Control: public, max-age=31536000, immutable` for hashed `/assets/` and `no-cache` for the rest.
+  Libraries are split into `react` and `vendor` chunks (cached across updates); dialogs and settings load on first use
+  and are prefetched when idle (`App.tsx`, `ConfigLayer.tsx`). Measured locally: first visit 152 kB over the wire,
+  repeat visit 1 kB. `index.html` paints the saved theme and a pulsing mark before any script loads (no white flash).
+- Motion: rows that arrive after a chat opened slide in (`is-fresh`, seq above the seq seen when the chat loaded);
+  history never animates (checked with stored rows). Switching bots fades the chat in. Presses scale slightly.
+  Everything respects reduced motion.
+- Live work: the header pill glows while the bot works; the tab title says "<bot> is working" or "<bot> needs you";
+  finished steps show an icon for their kind of work (`web/src/lib/stepIcon.ts`); the running step's label has a
+  moving sheen.
+- Avatars: top-lit gradient body, hairline rim instead of the old blur outline (one less filter per avatar), eye glow,
+  graphite instead of pure black, and a breathing mint halo while working.

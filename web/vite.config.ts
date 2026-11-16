@@ -17,5 +17,17 @@ export default defineConfig({
     },
   },
   // noVNC uses top-level await, so target ES2022+.
-  build: { target: 'es2022', chunkSizeWarningLimit: 1200 },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        // Libraries change far less often than the app: a separate file stays cached across Botly updates.
+        manualChunks(id) {
+          if (!id.includes('node_modules') || id.includes('@novnc')) return undefined;
+          return /[\\/](react|react-dom|scheduler|zustand)[\\/]/.test(id) ? 'react' : 'vendor';
+        },
+      },
+    },
+  },
 });

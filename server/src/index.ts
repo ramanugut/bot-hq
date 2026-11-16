@@ -41,8 +41,15 @@ app.route('/api', configApi);
 // Serve the built web app in production.
 const webDist = path.resolve(new URL('.', import.meta.url).pathname, '../../web/dist');
 if (fs.existsSync(webDist)) {
-  app.use('/*', serveStatic({ root: path.relative(process.cwd(), webDist) }));
-  app.get('*', (c) => c.html(fs.readFileSync(path.join(webDist, 'index.html'), 'utf8')));
+  // Build files have content hashes in their names, so browsers may keep them for a year; everything else is
+  // checked on each visit. The build writes .br/.gz copies, sent to browsers that accept them.
+  app.use('/*', serveStatic({
+    root: path.relative(process.cwd(), webDist),
+    precompressed: true,
+    onFound: (file, c) => { c.header('Cache-Control', /[\\/]assets[\\/]/.test(file) ? 'public, max-age=31536000, immutable' : 'no-cache'); },
+  }));
+  const indexHtml = fs.readFileSync(path.join(webDist, 'index.html'), 'utf8');
+  app.get('*', (c) => { c.header('Cache-Control', 'no-cache'); return c.html(indexHtml); });
 }
 
 const server = serve({ fetch: app.fetch, port: env.port }, (info) => console.log(`[botly] server on http://localhost:${info.port}`));
