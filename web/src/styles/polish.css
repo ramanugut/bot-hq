@@ -274,14 +274,7 @@ body { letter-spacing: 0; text-rendering: optimizeLegibility; }
   .step.is-running .step__label { color: var(--color-text-primary); background: none; }
 }
 
-/* ---------- avatars: lit, rimmed, calm ---------- */
-.robot__head { stroke: #00000014; stroke-width: 1.5; }
-:root[data-theme='dark'] .robot__head { stroke: #FFFFFF26; }
-/* The rim replaces the old blur outline, which cost a filter pass per avatar. */
-:root[data-theme='dark'] .robot__body { filter: none; }
-.robot__glow { opacity: 0.55; transition: opacity 300ms; }
-.robot.is-working .robot__glow { animation: robot-glow-breathe 1.6s ease-in-out infinite; }
-@keyframes robot-glow-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+/* ---------- avatars: a soft halo while working ---------- */
 /* Working: a soft mint halo breathes around the bot, wherever its avatar appears. */
 .bot-avatar.is-working::before {
   content: ''; position: absolute; inset: -3px; border-radius: 50%; pointer-events: none;
@@ -289,5 +282,8 @@ body { letter-spacing: 0; text-rendering: optimizeLegibility; }
   animation: avatar-halo 2.4s ease-in-out infinite;
 }
 @keyframes avatar-halo { 0%, 100% { opacity: 0.25; transform: scale(0.94); } 50% { opacity: 0.9; transform: scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .bot-avatar.is-working::before, .robot.is-working .robot__glow { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .bot-avatar.is-working::before { animation: none; } }
 .bot-avatar.is-working { isolation: isolate; } .bot-avatar.is-working::before { z-index: -1; }
+/* White petals need a hairline on a light page. */
+.puff__petal { fill: #FFFFFF; stroke: #00000024; stroke-width: 1; }
+:root[data-theme='dark'] .puff__petal { stroke: none; }

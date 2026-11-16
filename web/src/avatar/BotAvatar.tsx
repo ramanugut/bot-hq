@@ -5,102 +5,144 @@ import { Icon } from '../components/Icon';
 import { useStore } from '../store';
 
 /**
- * Robot avatars. Each bot is a little robot head in its own colour, with a dark visor and two
- * glowing eyes that blink and glance around on their own. Every animation is a CSS transform on a
- * few SVG nodes (no JavaScript timers), so dozens of avatars on screen cost next to nothing.
- * Each bot gets its own rhythm from its name, so a sidebar full of bots never blinks in unison.
+ * Bot avatars: soft little creatures ("puffs"). Each bot is a squishy, pastel body in its own colour with shiny eyes,
+ * rosy cheeks and a tiny mouth. They breathe (a slow squish), blink and glance around on their own rhythm, and do a
+ * happy squash-and-bounce while they work. Every animation is a CSS transform on a few SVG groups (no JavaScript
+ * timers), so a screen full of them costs next to nothing. Each bot's rhythm comes from its name, so a sidebar of
+ * puffs never breathes in unison. The shape names are kept from the old robots, so existing bots keep their slot.
  */
 
-type Part = (fill: string, dark: string) => JSX.Element;
-interface Robot {
-  /** Head and anything bolted to it, drawn in the bot's colour. viewBox is 0 0 100 100. */
-  head: Part;
-  /** Visor rectangle the eyes sit in. */
-  visor: { x: number; y: number; w: number; h: number; r: number };
+type Paint = { body: string; deep: string; light: string; cheek: string };
+interface Creature {
+  /** The body and anything attached to it (ears, tufts), in the bot's colour. viewBox is 0 0 100 100, feet at y≈94. */
+  body: (p: Paint) => JSX.Element;
+  /** Where the face sits and how big it is. */
+  face: { x: number; y: number; s: number };
+  /** Something that sways on its own (a sprout, a curl, a flower), drawn above the body. */
+  tuft?: (p: Paint) => JSX.Element;
+  /** A cat's "w" mouth instead of a smile. */
+  catMouth?: boolean;
 }
 
-const antenna = (fill: string, x = 50, top = 6, h = 14): JSX.Element => (
-  <g className="robot__antenna">
-    <rect x={x - 2} y={top + 5} width={4} height={h} rx={2} fill={fill} />
-    <circle className="robot__antenna-tip" cx={x} cy={top + 4} r={5} fill={fill} />
-  </g>
-);
+/** A soft star with rounded points, centred on (cx, cy). */
+function softStar(cx: number, cy: number, outer: number, inner: number): string {
+  const pts: [number, number][] = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const r = i % 2 ? inner : outer;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  // Curve through the midpoints, using each point as the control: every tip and notch comes out round.
+  const mid = (a: [number, number], b: [number, number]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const start = mid(pts[9], pts[0]);
+  let d = `M${start[0].toFixed(1)} ${start[1].toFixed(1)}`;
+  for (let i = 0; i < 10; i++) {
+    const m = mid(pts[i], pts[(i + 1) % 10]);
+    d += ` Q${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)} ${m[0].toFixed(1)} ${m[1].toFixed(1)}`;
+  }
+  return `${d} Z`;
+}
 
-const ROBOTS: Record<string, Robot> = {
-  // Round head with one antenna: the classic.
+const CREATURES: Record<string, Creature> = {
+  // Mochi: a round, squashed puff with a little sprout.
   blob: {
-    head: (f) => <>{antenna(f)}<circle cx={50} cy={56} r={36} fill={f} /><rect x={8} y={48} width={8} height={18} rx={4} fill={f} /><rect x={84} y={48} width={8} height={18} rx={4} fill={f} /></>,
-    visor: { x: 24, y: 40, w: 52, h: 30, r: 15 },
+    body: (p) => <ellipse cx={50} cy={62} rx={40} ry={32} fill={p.body} />,
+    tuft: (p) => <g className="puff__tuft"><path d="M50 31 C50 24 50 21 50 18" stroke={p.deep} strokeWidth={3} strokeLinecap="round" fill="none" /><path d="M50 22 C43 14 35 17 36 22 C40 26 47 25 50 22Z" fill={p.light} /><path d="M50 20 C56 11 65 13 64 19 C60 24 53 23 50 20Z" fill={p.light} /></g>,
+    face: { x: 50, y: 62, s: 1 },
   },
-  // Wide TV set with two antennas.
+  // Cloud puff.
   cloud: {
-    head: (f) => <><path d="M34 22 L24 8 M66 22 L76 8" stroke={f} strokeWidth={4} strokeLinecap="round" /><circle cx={24} cy={8} r={4} fill={f} /><circle cx={76} cy={8} r={4} fill={f} /><rect x={6} y={24} width={88} height={64} rx={18} fill={f} /></>,
-    visor: { x: 16, y: 34, w: 68, h: 36, r: 12 },
+    body: (p) => <path d="M22 90 C10 90 6 80 9 72 C4 64 9 52 20 52 C20 38 34 30 45 36 C51 26 68 26 73 39 C85 38 94 48 90 59 C98 64 97 78 88 84 C86 88 82 90 78 90 Z" fill={p.body} />,
+    face: { x: 50, y: 66, s: 1 },
   },
-  // Boxy head with bolts on the sides.
+  // Marshmallow: a soft square with tiny round ears.
   square: {
-    head: (f, d) => <>{antenna(f)}<rect x={12} y={24} width={76} height={66} rx={14} fill={f} /><circle cx={9} cy={57} r={6} fill={f} /><circle cx={91} cy={57} r={6} fill={f} /><circle cx={9} cy={57} r={2.4} fill={d} /><circle cx={91} cy={57} r={2.4} fill={d} /></>,
-    visor: { x: 22, y: 40, w: 56, h: 30, r: 9 },
+    body: (p) => <><circle cx={27} cy={30} r={8} fill={p.body} /><circle cx={73} cy={30} r={8} fill={p.body} /><rect x={13} y={28} width={74} height={64} rx={28} fill={p.body} /></>,
+    face: { x: 50, y: 60, s: 1 },
   },
-  // Head with two tall antennas.
+  // Bunny with long, floppy ears.
   sparkle: {
-    head: (f) => <>{antenna(f, 34, 2, 18)}{antenna(f, 66, 2, 18)}<rect x={12} y={26} width={76} height={64} rx={32} fill={f} /></>,
-    visor: { x: 22, y: 42, w: 56, h: 28, r: 14 },
+    body: (p) => <>
+      <g className="puff__ear puff__ear--l"><ellipse cx={35} cy={24} rx={8.5} ry={20} transform="rotate(-14 35 24)" fill={p.body} /><ellipse cx={35} cy={26} rx={4} ry={13} transform="rotate(-14 35 26)" fill={p.cheek} opacity={0.55} /></g>
+      <g className="puff__ear puff__ear--r"><ellipse cx={65} cy={24} rx={8.5} ry={20} transform="rotate(14 65 24)" fill={p.body} /><ellipse cx={65} cy={26} rx={4} ry={13} transform="rotate(14 65 26)" fill={p.cheek} opacity={0.55} /></g>
+      <ellipse cx={50} cy={64} rx={36} ry={30} fill={p.body} />
+    </>,
+    face: { x: 50, y: 64, s: 0.95 },
   },
-  // Round head with big ear pods (headphones).
+  // Little bear: round, with round ears.
   clover: {
-    head: (f) => <><path d="M18 50 A32 32 0 0 1 82 50" stroke={f} strokeWidth={5} fill="none" opacity={0.7} /><circle cx={50} cy={58} r={32} fill={f} /><rect x={4} y={44} width={16} height={30} rx={8} fill={f} /><rect x={80} y={44} width={16} height={30} rx={8} fill={f} /></>,
-    visor: { x: 28, y: 44, w: 44, h: 28, r: 14 },
+    body: (p) => <><circle cx={23} cy={33} r={11} fill={p.body} /><circle cx={77} cy={33} r={11} fill={p.body} /><circle cx={23} cy={33} r={5.5} fill={p.cheek} opacity={0.5} /><circle cx={77} cy={33} r={5.5} fill={p.cheek} opacity={0.5} /><ellipse cx={50} cy={60} rx={38} ry={34} fill={p.body} /></>,
+    face: { x: 50, y: 62, s: 1 },
   },
-  // Helmet with a wide visor.
+  // A plump heart.
   heart: {
-    head: (f) => <><path d="M10 64 C10 30 30 14 50 14 C70 14 90 30 90 64 L90 76 C90 84 84 90 76 90 L24 90 C16 90 10 84 10 76 Z" fill={f} /><rect x={46} y={6} width={8} height={12} rx={4} fill={f} /></>,
-    visor: { x: 18, y: 42, w: 64, h: 28, r: 14 },
+    body: (p) => <path d="M50 92 C24 80 7 62 10 43 C12 27 30 20 42 28 C46 30 48 33 50 36 C52 33 54 30 58 28 C70 20 88 27 90 43 C93 62 76 80 50 92 Z" fill={p.body} />,
+    face: { x: 50, y: 56, s: 0.92 },
   },
-  // Dome with a little propeller.
+  // A bud with a little flower on its head.
   flower: {
-    head: (f) => <><g className="robot__prop"><ellipse cx={50} cy={8} rx={18} ry={4} fill={f} /></g><rect x={47} y={8} width={6} height={12} rx={3} fill={f} /><path d="M12 62 A38 38 0 0 1 88 62 L88 80 C88 86 84 90 78 90 L22 90 C16 90 12 86 12 80 Z" fill={f} /></>,
-    visor: { x: 22, y: 46, w: 56, h: 28, r: 14 },
+    body: (p) => <ellipse cx={50} cy={64} rx={37} ry={30} fill={p.body} />,
+    tuft: (p) => <g className="puff__tuft">
+      <path d="M50 35 C50 30 50 28 50 26" stroke={p.deep} strokeWidth={2.6} strokeLinecap="round" fill="none" />
+      {[0, 72, 144, 216, 288].map((a) => <ellipse key={a} className="puff__petal" cx={50} cy={13} rx={4.6} ry={6.4} transform={`rotate(${a} 50 20)`} />)}
+      <circle cx={50} cy={20} r={4} fill="#FFD66B" />
+    </g>,
+    face: { x: 50, y: 64, s: 0.95 },
   },
-  // Tall capsule.
+  // Bean: a tall, soft egg with a single curl.
   teardrop: {
-    head: (f) => <>{antenna(f)}<rect x={20} y={20} width={60} height={74} rx={30} fill={f} /></>,
-    visor: { x: 28, y: 42, w: 44, h: 28, r: 14 },
+    body: (p) => <path d="M50 18 C72 18 84 44 84 64 C84 82 70 93 50 93 C30 93 16 82 16 64 C16 44 28 18 50 18 Z" fill={p.body} />,
+    tuft: (p) => <g className="puff__tuft"><path d="M50 19 C46 12 52 7 56 10 C59 13 55 17 52 14" stroke={p.deep} strokeWidth={2.8} strokeLinecap="round" fill="none" /></g>,
+    face: { x: 50, y: 60, s: 0.95 },
   },
-  // Screen face, like a tablet on a neck.
+  // Pudding with a caramel top.
   tablet: {
-    head: (f) => <><rect x={8} y={14} width={84} height={66} rx={12} fill={f} /><rect x={40} y={80} width={20} height={10} rx={3} fill={f} /><rect x={28} y={88} width={44} height={6} rx={3} fill={f} /></>,
-    visor: { x: 16, y: 22, w: 68, h: 50, r: 6 },
+    body: (p) => <>
+      <path d="M22 92 C15 92 12 88 13 82 L22 38 C23 31 28 27 35 27 L65 27 C72 27 77 31 78 38 L87 82 C88 88 85 92 78 92 Z" fill={p.body} />
+      <path d="M35 27 L65 27 C72 27 77 31 78 38 L79 43 C74 47 70 41 66 46 C62 50 58 43 53 47 C48 51 45 44 40 47 C35 50 31 44 26 46 C24 47 22 46 21 44 L22 38 C23 31 28 27 35 27 Z" fill={p.deep} opacity={0.85} />
+    </>,
+    face: { x: 50, y: 66, s: 0.95 },
   },
-  // Angular head.
+  // Kitten with soft pointed ears.
   wedge: {
-    head: (f) => <>{antenna(f, 70, 4, 14)}<path d="M18 24 L82 24 L92 58 L80 90 L20 90 L8 58 Z" fill={f} strokeLinejoin="round" /></>,
-    visor: { x: 20, y: 42, w: 60, h: 26, r: 8 },
+    body: (p) => <>
+      <path d="M17 46 C14 32 15 20 19 15 C23 13 32 21 39 29 Z" fill={p.body} strokeLinejoin="round" />
+      <path d="M83 46 C86 32 85 20 81 15 C77 13 68 21 61 29 Z" fill={p.body} strokeLinejoin="round" />
+      <path d="M21 36 C20 28 21 22 23 20 C26 21 30 25 33 29 Z" fill={p.cheek} opacity={0.5} />
+      <path d="M79 36 C80 28 79 22 77 20 C74 21 70 25 67 29 Z" fill={p.cheek} opacity={0.5} />
+      <ellipse cx={50} cy={60} rx={38} ry={33} fill={p.body} />
+    </>,
+    face: { x: 50, y: 61, s: 1 },
+    catMouth: true,
   },
-  // Rounded square with a ball antenna.
+  // A round bun with a little knot on top.
   house: {
-    head: (f) => <>{antenna(f, 50, 2, 16)}<rect x={14} y={24} width={72} height={68} rx={24} fill={f} /></>,
-    visor: { x: 24, y: 42, w: 52, h: 30, r: 15 },
+    body: (p) => <>
+      <path d="M10 76 C10 54 28 40 50 40 C72 40 90 54 90 76 C90 88 82 93 72 93 L28 93 C18 93 10 88 10 76 Z" fill={p.body} />
+      <path d="M50 41 L40 48 M50 41 L60 48 M50 41 L50 50" stroke={p.deep} strokeWidth={1.8} strokeLinecap="round" fill="none" opacity={0.45} />
+      <circle cx={50} cy={39} r={6} fill={p.body} />
+    </>,
+    face: { x: 50, y: 70, s: 0.95 },
   },
-  // Orb with a halo ring.
+  // A chubby star.
   star: {
-    head: (f) => <><g className="robot__halo"><ellipse cx={50} cy={58} rx={46} ry={11} fill="none" stroke={f} strokeWidth={4} opacity={0.55} /></g><circle cx={50} cy={54} r={34} fill={f} /></>,
-    visor: { x: 26, y: 40, w: 48, h: 28, r: 14 },
+    body: (p) => <path d={softStar(50, 56, 46, 28)} fill={p.body} />,
+    face: { x: 50, y: 60, s: 0.82 },
   },
-  // Hexagon head.
+  // A little ghost with a wavy hem.
   hex: {
-    head: (f) => <>{antenna(f)}<path d="M50 20 L84 38 L84 76 L50 94 L16 76 L16 38 Z" fill={f} strokeLinejoin="round" /></>,
-    visor: { x: 24, y: 44, w: 52, h: 28, r: 12 },
+    body: (p) => <path d="M16 52 C16 30 31 16 50 16 C69 16 84 30 84 52 L84 84 C84 90 79 93 74 89 C70 86 66 86 62 90 C58 94 54 94 50 90 C46 86 42 86 38 90 C34 94 30 94 26 90 C22 86 16 92 16 84 Z" fill={p.body} />,
+    face: { x: 50, y: 52, s: 0.98 },
   },
 };
 
-/** Older shape names (from bots made before these robots) map onto the closest robot. */
+/** Older shape names (from bots made before these) map onto the closest creature. */
 const ALIAS: Record<string, string> = {
   pebble: 'blob', bean: 'teardrop', egg: 'teardrop', squircle: 'house', capsule: 'teardrop', cylinder: 'tablet',
   gem: 'hex', crystal: 'hex', shield: 'heart', dome: 'flower', arch: 'heart', leaf: 'wedge',
 };
 
-export const robotFor = (shape: string): Robot => ROBOTS[shape] ?? ROBOTS[ALIAS[shape] ?? 'blob'] ?? ROBOTS.blob;
+const creatureFor = (shape: string): Creature => CREATURES[shape] ?? CREATURES[ALIAS[shape] ?? 'blob'] ?? CREATURES.blob;
 
 /** Shapes offered in the Create New Bot picker. */
 export const PICKER_SHAPES: AvatarShape[] = ['blob', 'cloud', 'square', 'sparkle', 'clover', 'heart', 'flower', 'teardrop', 'tablet', 'wedge', 'house', 'star', 'hex'];
@@ -121,37 +163,43 @@ interface Props {
   ring?: boolean;
   className?: string;
   title?: string;
-  /** Busy: eyes scan quickly and the antenna glows. */
+  /** Busy: a happy squash-and-bounce. */
   working?: boolean;
-  /** Still: no blinking or glancing (e.g. tiny icons). */
+  /** Still: no breathing, blinking or glancing (e.g. tiny icons). */
   still?: boolean;
 }
 
 export function BotAvatar({ shape, color, size, star, ring, className, title, working, still }: Props) {
-  const robot = robotFor(String(shape));
-  // Pure black reads as a hole on a dark screen: black robots are graphite instead.
-  const base = palette(color).fill.toUpperCase() === '#000000' ? '#262A32' : palette(color).fill;
-  const darkBody = isDark(base);
-  const visorFill = darkBody ? '#0E1014' : '#14161B';
-  const eye = '#8FF3CF';
-  // Soft top light: a lighter crown fading to a slightly deeper chin, the same for every part of the head.
+  const c = creatureFor(String(shape));
+  // Pure black would read as a hole: black puffs are a soft charcoal plush instead. Everything is a touch pastel.
+  const raw = palette(color).fill.toUpperCase() === '#000000' ? '#3E4350' : palette(color).fill;
+  const darkBody = isDark(raw);
+  const base = darkBody ? raw : shade(raw, 0.1);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const bodyId = `rb${uid}`;
-  const glowId = `rg${uid}`;
-  const fill = `url(#${bodyId})`;
+  const bodyId = `pb${uid}`;
+  const glossId = `pg${uid}`;
+  const paint: Paint = {
+    body: `url(#${bodyId})`,
+    deep: shade(raw, darkBody ? 0.35 : -0.28),
+    light: shade(raw, darkBody ? 0.45 : 0.42),
+    // Rosy cheeks; on pink and red bodies they turn a lighter coral so they still show.
+    cheek: /^#(F9|FB|E5|C8)/i.test(raw) ? '#FFD0D8' : '#FF8FA8',
+  };
+  const tiny = size < 22;
+  const eye = darkBody ? '#FFF6EE' : '#2A2230';
+  const shine = darkBody ? '#2A2230' : '#FFFFFF';
   const r = seed(`${title ?? ''}${shape}${color}`);
-  // Negative delays start each bot part-way through its loop; durations differ a little per bot.
+  // Negative delays start each puff part-way through its loop; durations differ a little per bot.
   const timing = {
-    ['--blink-dur' as string]: `${4.2 + r * 3}s`, ['--blink-delay' as string]: `-${(r * 7).toFixed(2)}s`,
+    ['--blink-dur' as string]: `${4.4 + r * 3}s`, ['--blink-delay' as string]: `-${(r * 7).toFixed(2)}s`,
     ['--look-dur' as string]: `${8 + r * 6}s`, ['--look-delay' as string]: `-${(r * 13).toFixed(2)}s`,
+    ['--breathe-dur' as string]: `${3.2 + r * 1.4}s`, ['--breathe-delay' as string]: `-${(r * 5).toFixed(2)}s`,
   } as React.CSSProperties;
-  const v = robot.visor;
-  const eyeW = v.w * 0.17;
-  const eyeH = v.h * 0.52;
-  const cy = v.y + v.h / 2;
+  const { x, y, s } = c.face;
+  const ex = 11.5 * s;
   return (
     <span
-      className={`bot-avatar robot${working ? ' is-working' : ''}${still || size < 18 ? ' is-still' : ''} ${className ?? ''}`}
+      className={`bot-avatar puff${working ? ' is-working' : ''}${still || tiny ? ' is-still' : ''} ${className ?? ''}`}
       style={{ width: size, height: size, ...timing }}
       title={title}
       role="img"
@@ -159,27 +207,38 @@ export function BotAvatar({ shape, color, size, star, ring, className, title, wo
     >
       <svg width={size} height={size} viewBox="-4 -4 108 108" style={{ overflow: 'visible' }} aria-hidden>
         <defs>
-          <linearGradient id={bodyId} gradientUnits="userSpaceOnUse" x1="0" y1="4" x2="0" y2="96">
-            <stop offset="0" stopColor={shade(base, darkBody ? 0.16 : 0.22)} />
-            <stop offset="0.55" stopColor={base} />
-            <stop offset="1" stopColor={shade(base, -0.16)} />
+          <linearGradient id={bodyId} gradientUnits="userSpaceOnUse" x1="0" y1="10" x2="0" y2="96">
+            <stop offset="0" stopColor={shade(base, darkBody ? 0.2 : 0.32)} />
+            <stop offset="0.6" stopColor={base} />
+            <stop offset="1" stopColor={shade(base, darkBody ? -0.1 : -0.1)} />
           </linearGradient>
-          <radialGradient id={glowId}>
-            <stop offset="0" stopColor={eye} stopOpacity="0.5" />
-            <stop offset="1" stopColor={eye} stopOpacity="0" />
+          <radialGradient id={glossId} cx="0.5" cy="0.5" r="0.5">
+            <stop offset="0" stopColor="#FFFFFF" stopOpacity={darkBody ? 0.28 : 0.55} />
+            <stop offset="1" stopColor="#FFFFFF" stopOpacity="0" />
           </radialGradient>
         </defs>
-        {ring && <circle cx={50} cy={52} r={54} fill="none" stroke="#1C1C1C3D" strokeWidth={4} />}
-        <g className="robot__body">
-          {/* A hairline rim keeps every colour, dark ones included, distinct from the page. */}
-          <g className="robot__head">{robot.head(fill, visorFill)}</g>
-          <rect x={v.x} y={v.y} width={v.w} height={v.h} rx={v.r} fill={visorFill} />
-          <ellipse className="robot__glow" cx={v.x + v.w / 2} cy={cy} rx={v.w * 0.46} ry={v.h * 0.5} fill={`url(#${glowId})`} />
-          <g className="robot__eyes">
-            <rect className="robot__eye" x={v.x + v.w * 0.3 - eyeW / 2} y={cy - eyeH / 2} width={eyeW} height={eyeH} rx={eyeW / 2} fill={eye} />
-            <rect className="robot__eye" x={v.x + v.w * 0.7 - eyeW / 2} y={cy - eyeH / 2} width={eyeW} height={eyeH} rx={eyeW / 2} fill={eye} />
+        {ring && <circle cx={50} cy={54} r={54} fill="none" stroke="#1C1C1C3D" strokeWidth={4} />}
+        {!tiny && <ellipse className="puff__shadow" cx={50} cy={97} rx={30} ry={3.6} fill="#000000" opacity={0.16} />}
+        <g className="puff__body">
+          {c.body(paint)}
+          {c.tuft?.(paint)}
+          {/* A soft glossy spot, top left: the squishy look. */}
+          {!tiny && <ellipse cx={34} cy={44} rx={13} ry={9} fill={`url(#${glossId})`} transform="rotate(-24 34 44)" />}
+          {!tiny && <>
+            <ellipse cx={x - ex - 7.5 * s} cy={y + 8 * s} rx={6 * s} ry={3.6 * s} fill={paint.cheek} opacity={0.6} />
+            <ellipse cx={x + ex + 7.5 * s} cy={y + 8 * s} rx={6 * s} ry={3.6 * s} fill={paint.cheek} opacity={0.6} />
+          </>}
+          <g className="puff__eyes">
+            {[-1, 1].map((side) => (
+              <g key={side} className="puff__eye">
+                <ellipse cx={x + side * ex} cy={y} rx={4.6 * s} ry={5.8 * s} fill={eye} />
+                {!tiny && <circle cx={x + side * ex + 1.5 * s} cy={y - 2.2 * s} r={1.7 * s} fill={shine} />}
+              </g>
+            ))}
           </g>
-          <rect x={v.x + v.w * 0.08} y={v.y + v.h * 0.12} width={v.w * 0.22} height={v.h * 0.14} rx={v.h * 0.07} fill="#FFFFFF" opacity={0.18} />
+          {!tiny && (c.catMouth
+            ? <path d={`M${x - 5 * s} ${y + 7 * s} q${2.5 * s} ${3 * s} ${5 * s} 0 q${2.5 * s} ${3 * s} ${5 * s} 0`} stroke={eye} strokeWidth={2 * s} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+            : <path className="puff__mouth" d={`M${x - 4 * s} ${y + 7.5 * s} Q${x} ${y + 11 * s} ${x + 4 * s} ${y + 7.5 * s}`} stroke={eye} strokeWidth={2 * s} strokeLinecap="round" fill="none" />)}
         </g>
       </svg>
       {star && (

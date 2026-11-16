@@ -226,3 +226,13 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
   moving sheen.
 - Avatars: top-lit gradient body, hairline rim instead of the old blur outline (one less filter per avatar), eye glow,
   graphite instead of pure black, and a breathing mint halo while working.
+
+## Puff avatars (16 Nov 2026)
+- The robot heads are replaced by soft creatures ("puffs") in `web/src/avatar/BotAvatar.tsx`: same 13 shape names and
+  11 colours, so existing bots keep their slot (blob = mochi with a sprout, cloud, square = marshmallow, sparkle = bunny,
+  clover = bear, heart, flower, teardrop = bean, tablet = pudding, wedge = kitten, house = bun, star, hex = ghost).
+- Pastel gradient body, gloss spot, rosy cheeks, shiny eyes, a small mouth; black becomes soft charcoal with light eyes.
+  Under 22 px only the body and eyes are drawn.
+- Motion (`base.css`, `puff-*` keyframes): a slow breathing squish anchored at the feet, blinks, glances, a swaying tuft,
+  occasional ear flicks; working = squash-and-bounce with a shrinking shadow. All CSS transforms; reduced motion stops it.
+- The app icon (`/icon.svg`) is still the robot; change it separately if the brand should follow.
