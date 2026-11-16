@@ -226,3 +226,15 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
   moving sheen.
 - Avatars: top-lit gradient body, hairline rim instead of the old blur outline (one less filter per avatar), eye glow,
   graphite instead of pure black, and a breathing mint halo while working.
+
+## Primary and desktop security work (16 Nov 2026, separate draft PR)
+
+- Claude's latest free-edition has UI updates but no primary non-root or X11 authentication cutover; the server has not been changed by this PR.
+- Draft security PR #3 covers restricted managed-bot UIDs and Botly MCP approval broker.
+- Draft PR #4 adds primary runtime UID verification, a root-private X11 Xauthority option and offline primary-Hermes profile staging.
+- BOTLY_PRIMARY_SECURITY_MODE=restricted and BOTLY_X11_AUTH=secure are opt-in and MUST NOT be set on a live server until an approved snapshot, backup, controlled service restart and acceptance tests.
+- BOTLY_SHELL_SANDBOX=bubblewrap is separate opt-in; no host shell fallback. This has not been tested on EC2 ARM64 and may be blocked by Ubuntu's user-namespace policies.
+- scripts/security-primary-cutover.py --check is read-only; --stage requires an owner-controlled offline window and does not activate the new profile.
+- docs/PRIMARY-DESKTOP-SECURITY.md records outstanding risks: Chrome CDP remains on localhost; root app/desktop processes persist; bot libraries/profiles still need migration and full per-agent desktop isolation.
+- Do not merge Browser Use PR #2 unchanged if it exposes native terminal/browser tools within restricted Hermes profiles.
+- Current CI builds and tests the staged branch, but NO live host verification has been performed; do not call this deployed or finished.
