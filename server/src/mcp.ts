@@ -46,8 +46,9 @@ async function listTools(botId: string | null) {
   // Show the broker only when it is usable. Never advertise root-level shell
   // operations to the primary bot or to unrestricted installs.
   const restricted = (env.restrictedAgents && bot?.engine === 'managed') || (env.restrictedPrimary && bot?.engine === 'primary');
-  const own = TOOLS.filter((t) => restricted ||
-    !['approved_shell', 'approved_browser_action', 'browser_inspect'].includes(t.name))
+  const own = TOOLS.filter((t) => (restricted ||
+    !['approved_shell', 'approved_browser_action', 'browser_inspect'].includes(t.name)) &&
+    (t.name !== 'approved_shell' || (restricted && env.shellSandbox)))
     .map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   if (!bot) return own;
   const apps = (await composioTools(bot.user_id))
