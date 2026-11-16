@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { getBotRow } from './store.js';
+import { env } from './env.js';
 import { composioTools } from './composio.js';
 import { mcpToken, primaryBotId } from './engine.js';
 import { claimToolRow, enqueueBotMessage, markSilent, noteToolOutcome, requestApproval, turnDepth } from './agent/loop.js';
@@ -41,8 +42,13 @@ function caller(slug: string, auth: string | undefined): { botId: string | null 
 }
 
 async function listTools(botId: string | null) {
-  const own = TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   const bot = botId ? getBotRow(botId) : null;
+  // Show the broker only when it is usable. Never advertise root-level shell
+  // operations to the primary bot or to unrestricted installs.
+  const restricted = env.restrictedAgents && bot?.engine === 'managed';
+  const own = TOOLS.filter((t) => restricted ||
+    !['approved_shell', 'approved_browser_action', 'browser_inspect'].includes(t.name))
+    .map((t) => ({ name: t.name, description: t.description, inputSchema: t.parameters }));
   if (!bot) return own;
   const apps = (await composioTools(bot.user_id))
     .filter((t: any) => t?.type === 'function' && typeof t.name === 'string' && !toolMap.has(t.name))
