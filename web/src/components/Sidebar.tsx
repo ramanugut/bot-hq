@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useState } from 'react';
 import { disablePush, enablePush, pushEnabled } from '../lib/push';
 import { useConfigUI } from '../configStore';
 import { TasksIsland } from './config/TasksView';
-import type { Bot } from '@shared/types';
+import type { Bot, LiveState } from '@shared/types';
+import { activityStatus } from '../lib/phrases';
 import { BotAvatarFor } from '../avatar/BotAvatar';
 import { displayName, isPhone, useStore } from '../store';
 import { api } from '../lib/api';
@@ -28,13 +29,16 @@ export function TrafficLights() {
   );
 }
 
-function previewFor(bot: Bot, running: boolean, awaiting: string | null) {
-  if (awaiting) return `Waiting for you: ${awaiting}`;
-  if (running && !bot.lastPreview) return 'Working…';
+/** What a working bot is doing, in the same words as its status line in the chat. */
+const runningStatus = (l: LiveState | undefined) => (l?.isRunning ? activityStatus(l, []) : null);
+
+function previewFor(bot: Bot, running: string | null, awaiting: string | null) {
+  if (awaiting) return /^(waiting|needs you)\b/i.test(awaiting) ? awaiting : `Waiting for you: ${awaiting}`;
+  if (running) return `${running}…`;
   return bot.lastPreview ?? 'No messages yet';
 }
 
-const BotRow = memo(function BotRow({ bot, selected, running, awaiting, onSelect, star }: { bot: Bot; selected: boolean; running: boolean; awaiting: string | null; onSelect: (id: string) => void; star?: boolean }) {
+const BotRow = memo(function BotRow({ bot, selected, running, awaiting, onSelect, star }: { bot: Bot; selected: boolean; running: string | null; awaiting: string | null; onSelect: (id: string) => void; star?: boolean }) {
   return (
     <button type="button" className={`bot-row${selected ? ' is-selected' : ''}`} onClick={() => onSelect(bot.id)} aria-current={selected || undefined}>
       <span className="bot-row__avatar">
@@ -138,7 +142,7 @@ export function Sidebar() {
         )}
         <div className="bot-list">
           {primary && !collapsed && (
-            <BotRow bot={primary} star selected={selectedBotId === primary.id} running={!!live[primary.id]?.isRunning} awaiting={live[primary.id]?.awaiting?.reason ?? null} onSelect={selectBot} />
+            <BotRow bot={primary} star selected={selectedBotId === primary.id} running={runningStatus(live[primary.id])} awaiting={live[primary.id]?.awaiting?.reason ?? null} onSelect={selectBot} />
           )}
           {others.map((b) =>
             collapsed ? (
@@ -146,7 +150,7 @@ export function Sidebar() {
                 <BotAvatarFor bot={b} size={36} />
               </button>
             ) : (
-              <BotRow key={b.id} bot={b} selected={selectedBotId === b.id} running={!!live[b.id]?.isRunning} awaiting={live[b.id]?.awaiting?.reason ?? null} onSelect={selectBot} />
+              <BotRow key={b.id} bot={b} selected={selectedBotId === b.id} running={runningStatus(live[b.id])} awaiting={live[b.id]?.awaiting?.reason ?? null} onSelect={selectBot} />
             ),
           )}
           {!collapsed && others.length === 0 && (

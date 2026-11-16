@@ -198,3 +198,11 @@ body { letter-spacing: 0; text-rendering: optimizeLegibility; }
 @media (prefers-reduced-motion: reduce) {
   .btn:active:not(:disabled) { transform: none; }
 }
+
+/* ---------- live status: one line for what, one for how long ---------- */
+/* Step counts read like the text around them, not like code. */
+.steps__count { font-family: inherit; font-size: 12px; font-variant-numeric: tabular-nums; }
+/* A real caption may run to two lines instead of being cut off on a phone. */
+.thinking__caption-line { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+/* On a phone the header has room for the name only; the role stays in the sidebar and details. */
+@media (max-width: 760px) { .chat__pill-label { display: none; } }

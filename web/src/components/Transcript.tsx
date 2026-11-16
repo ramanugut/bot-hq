@@ -199,11 +199,8 @@ function Steps({ item, active, open: unfinished, extra }: {
     <div className={`steps${open ? ' is-open' : ''}${active ? ' is-active' : ''}`}>
       <button type="button" className="steps__toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
         {active ? (
-          <>
-            <span className="step__spin" aria-hidden />
-            <span className="steps__now" key={current.callId}>{current.label || current.name}</span>
-            <span className="steps__sep" aria-hidden>·</span>
-          </>
+          // What the bot is doing right now is shown once, in the status line below; the chip only counts.
+          <span className="step__spin" aria-hidden title={current.label || current.name} />
         ) : (
           <>
             {flag && <span className={`steps__flag is-${flag}`} title={flag === 'waiting' ? 'A step is waiting for your OK' : 'A step did not finish'} />}

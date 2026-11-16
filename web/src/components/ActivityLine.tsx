@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrainCircuit, Code2, FileText, Globe2, Hourglass, Network, Orbit, ScanSearch, Sparkles, Waves } from 'lucide-react';
 import type { Bot, LiveState, Row } from '@shared/types';
-import { activityPhrase, activityStatus, isWaitingForYou } from '../lib/phrases';
+import { activityStatus, isWaitingForYou, repeatsStatus } from '../lib/phrases';
 import { duration } from '../lib/time';
 
 type SignalMode = 'think' | 'search' | 'read' | 'browse' | 'write' | 'code' | 'create' | 'connect' | 'wait' | 'work';
@@ -82,13 +82,12 @@ export function ThinkingBlock({ bot, live, rows, steps = 0 }: Props) {
   const mode = activitySignalMode(live, rows);
   const status = activityStatus(live, rows);
   const since = live.startedAt ?? live.activity?.since ?? live.awaiting?.since ?? now;
-  const tick = Math.max(0, Math.floor((now - (live.activity?.since ?? since)) / 6000));
-  const caption = waiting
-    ? live.awaiting?.reason || 'Waiting for your answer'
-    : live.caption?.trim() || activityPhrase(live, rows, tick);
-  const timer = waiting
-    ? live.awaiting && now - live.awaiting.since >= 1000 ? `Waiting for ${duration(now - live.awaiting.since)}` : null
-    : now - since >= 1000 ? `Working for ${duration(now - since)}` : null;
+  // The status beside the name already says what is happening; a caption only adds what the bot is actually
+  // thinking or why it waits, never the same idea in other words.
+  const raw = waiting ? live.awaiting?.reason?.trim() : live.caption?.trim();
+  const caption = raw && !repeatsStatus(raw, status) ? raw : null;
+  const from = waiting && live.awaiting ? live.awaiting.since : since;
+  const timer = now - from >= 1000 ? duration(now - from) : null;
 
   return (
     <div className={`thinking thinking--signal is-${mode}`}>
@@ -99,7 +98,7 @@ export function ThinkingBlock({ bot, live, rows, steps = 0 }: Props) {
           <span className="thinking__separator" aria-hidden="true" />
           <span className="thinking__status" role="status" aria-live="polite">{status}</span>
         </div>
-        <Caption text={caption} />
+        {caption && <Caption text={caption} />}
         {(timer || steps > 0) && (
           <span className="thinking__meta">
             {timer}

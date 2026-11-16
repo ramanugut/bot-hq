@@ -190,3 +190,12 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
   under `set -e`. Reproduced with tar 1.35. The nightly backup had the same flaw.
 - `backup.sh` now treats tar exit 1 as success (the archive is still listed and checked for the database, `.env`,
   Hermes home and Library before it is published) and exit 2 or more as failure. `tests/backup.test.sh` covers both.
+
+## One status, said once (16 Nov 2026)
+- While a bot works, "what it is doing" appears once: the status beside its name. The live steps chip shows only a
+  spinner and the count; the caption under the name appears only when it adds something (the bot's own words or why it
+  waits) and `repeatsStatus()` in `web/src/lib/phrases.ts` drops captions that restate the status. The rotating filler
+  phrases ("Running a few commands", "Digging around") are gone. The timer reads "1m 38s", not "Working for 1m 38s".
+- Sidebar rows show the live status while a bot works instead of "Working…", and no longer print "Waiting for you:
+  Waiting for…". The message box says "Message Marvelous", the phone header shows the name without the role, step counts
+  use the body font, and captions wrap to two lines instead of being cut off on phones.
