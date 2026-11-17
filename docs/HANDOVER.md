@@ -246,3 +246,15 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - The bot prompt and Motion Studio (storylines, render or change) tell bots to offer task choices with `ask_user`
   instead of listing them in text; ordinary conversation stays text.
 - Also in this round: puff working indicator with a thought bubble, mochi app icon and loading screen, 24 bot colours.
+
+## Report-style replies (17 Nov 2026, GitHub only)
+- Bots used to be told to "write like a colleague texting", so status checks came back as one block of text.
+  The Style rules in `server/src/agent/prompt.ts` now fit the layout to the question: short answers for chat;
+  for status checks and reports a verdict, summary cards, `##` sections, tables and next steps; record lists as
+  tables, newest first, with a count.
+- Two fenced blocks are drawn by `web/src/components/Markdown.tsx`: ```` ```stats ```` (one card per line,
+  `label | value | note | tone`, tone good/warn/bad) and ```` ```verdict ```` (`label | note | tone`, a coloured pill;
+  tone is guessed from words like "at risk" when left out). Any other fenced block is still a code block.
+- Styles for headings, tables, cards and the pill are at the end of `web/src/styles/polish.css` (light, dark, phone).
+- `?fixtures` in dev now includes a sample health-check reply.
+- Existing chats keep the old prompt (Hermes fixes it per conversation); start a new chat to see the new layout.
