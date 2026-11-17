@@ -8,7 +8,7 @@ import { Icon } from '../Icon';
 import { Modal } from './Modal';
 
 const ROWS = [PICKER_SHAPES.slice(0, 5), PICKER_SHAPES.slice(5, 10), PICKER_SHAPES.slice(10)];
-const COLOR_ROWS = [COLOR_ORDER.slice(0, 6), COLOR_ORDER.slice(6)];
+const COLOR_ROWS = [COLOR_ORDER.slice(0, 8), COLOR_ORDER.slice(8, 16), COLOR_ORDER.slice(16)];
 
 export function CreateBotModal() {
   const setModal = useStore((s) => s.setModal);
@@ -69,7 +69,7 @@ export function CreateBotModal() {
             {COLOR_ROWS.map((row, i) => (
               <div key={i} className="swatches__row">
                 {row.map((c) => (
-                  <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={c} className="swatch-cell" onClick={() => setColor(c)}>
+                  <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={c} title={c} className="swatch-cell" onClick={() => setColor(c)}>
                     <span className={`swatch${color === c ? ' is-selected' : ''}`} style={{ background: palette(c).fill }} />
                   </button>
                 ))}

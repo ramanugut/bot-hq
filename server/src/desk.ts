@@ -9,20 +9,20 @@ import { box, displayFor } from './box.js';
  * home screen (the bot's avatar, a clock, the computer's apps) as Chrome's new tab page.
  *
  * The work on the computer is done by the scripts in server/box/, which this file installs under
- * /opt/hq and then calls with one short command per action. Only `box.*` is used to reach the
- * computer, so it works the same through Orgo's API and with HQ_LOCAL=1.
+ * /opt/botly and then calls with one short command per action. Only `box.*` is used to reach the
+ * computer, so it works the same through Orgo's API and with BOTLY_LOCAL=1.
  */
 
 export interface DeskBot { id: string; name: string; label: string; avatarShape: string; avatarColor: string }
 
-const ROOT = '/opt/hq';
-const SCRIPT = `${ROOT}/hq-screen.py`;
-/** Source file under server/box/ -> where it lives under /opt/hq on the computer. */
+const ROOT = '/opt/botly';
+const SCRIPT = `${ROOT}/botly-screen.py`;
+/** Source file under server/box/ -> where it lives under /opt/botly on the computer. */
 const BOX_FILES: Record<string, string> = {
-  'hqlib.py': 'hqlib.py',
-  'hq-screen.py': 'hq-screen.py',
-  'hq-shell.py': 'hq-shell.py',
-  'hq-home.py': 'hq-home.py',
+  'botlylib.py': 'botlylib.py',
+  'botly-screen.py': 'botly-screen.py',
+  'botly-shell.py': 'botly-shell.py',
+  'botly-home.py': 'botly-home.py',
   'home.html': 'home.html',
   'ext/manifest.json': 'ext/src/manifest.json',
   'ext/newtab.html': 'ext/src/newtab.html',
@@ -64,15 +64,15 @@ interface Reply { kind: 'OK' | 'DONE' | 'RUNNING' | 'NOBASE' | 'BASE_OK' | 'NONE
 function parseReply(output: string): Reply {
   const lines = output.split('\n').map((l) => l.trim()).filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i--) {
-    const m = /^HQ_(OK|DONE|RUNNING|NOBASE|BASE_OK)\b ?(.*)$/.exec(lines[i]);
+    const m = /^BOTLY_(OK|DONE|RUNNING|NOBASE|BASE_OK)\b ?(.*)$/.exec(lines[i]);
     if (m) return { kind: m[1] as Reply['kind'], rest: m[2], raw: output };
   }
   return { kind: 'NONE', rest: '', raw: output };
 }
 
-/** One call to hq-screen.py. A missing or failing script answers NOBASE so the caller can install it. */
+/** One call to botly-screen.py. A missing or failing script answers NOBASE so the caller can install it. */
 async function script(args: string[], screenId?: string, timeoutSec = 60): Promise<Reply> {
-  const cmd = `[ -f ${SCRIPT} ] && python3 ${SCRIPT} ${args.map(box.quote).join(' ')} 2>&1 || echo HQ_NOBASE`;
+  const cmd = `[ -f ${SCRIPT} ] && python3 ${SCRIPT} ${args.map(box.quote).join(' ')} 2>&1 || echo BOTLY_NOBASE`;
   const r = await box.bash(cmd, timeoutSec, screenId);
   return parseReply(r.output);
 }
@@ -123,10 +123,10 @@ async function setupBase(): Promise<void> {
     "    if 'ext/src/' + name not in files:",
     '        os.unlink(os.path.join(src, name))',
     "os.unlink(root + '/bundle.json.gz')",
-    "print('HQ_UNPACKED')",
+    "print('BOTLY_UNPACKED')",
   ].join('\n');
   const r = await box.bash(`python3 -c ${box.quote(unpack)} 2>&1`, 60);
-  if (!r.output.includes('HQ_UNPACKED')) {
+  if (!r.output.includes('BOTLY_UNPACKED')) {
     throw new Error(`could not install the desktop scripts on the computer (python3 is needed): ${r.output.trim().slice(-300)}`);
   }
   // Package installs can take a while on a fresh computer.
@@ -267,37 +267,20 @@ function wallpaperSvg(p: Palette, seed: string): string {
 
 // ---------------------------------------------------------------- avatar
 
-interface ShapeDef { viewBox: string; d: string; outline: string }
-/** Older shape names the web app also maps onto the drawn set. */
-const SHAPE_FALLBACK: Record<string, string> = {
-  bean: 'teardrop', squircle: 'square', capsule: 'tablet', cylinder: 'tablet', gem: 'hex', crystal: 'hex',
-  shield: 'house', dome: 'house', arch: 'house', leaf: 'teardrop',
-};
-let shapesCache: Record<string, ShapeDef> | null = null;
-
-/** The avatar art lives in the web app; read it as text so the server needs no build step for it. */
-function shapes(): Record<string, ShapeDef> {
-  if (shapesCache) return shapesCache;
-  shapesCache = {};
-  try {
-    const text = fs.readFileSync(new URL('../../web/src/avatar/shapes.gen.ts', import.meta.url), 'utf8');
-    const start = text.indexOf('{', text.indexOf('SHAPES'));
-    const end = text.lastIndexOf('}');
-    if (start > 0 && end > start) shapesCache = JSON.parse(text.slice(start, end + 1)) as Record<string, ShapeDef>;
-  } catch {
-    warn('avatar shapes not found, using a plain circle');
-  }
-  return shapesCache;
-}
-
+/** Original robot art for the desktop, where React is unavailable. */
 function avatarSvg(shape: string, fill: string): string {
-  const all = shapes();
-  const def = all[shape] ?? all[SHAPE_FALLBACK[shape] ?? 'blob'] ?? all.blob;
-  const safe = (s: string) => /^[\w\s.,\-+]*$/.test(s);
-  if (!def || !safe(def.d) || !safe(def.outline) || !safe(def.viewBox)) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48"><circle cx="24" cy="24" r="22" fill="#fff"/><circle cx="24" cy="24" r="19" fill="${fill}"/></svg>`;
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${def.viewBox}"><path d="${def.outline}" fill="#fff"/><path d="${def.d}" fill="${fill}" fill-rule="evenodd"/></svg>`;
+  const boxy = ['tablet', 'square', 'cloud', 'squircle'].includes(shape);
+  const body = ['hex', 'gem', 'crystal', 'wedge'].includes(shape)
+    ? `<path d="M24 12H72L87 30V67L72 84H24L9 67V30Z" fill="${fill}"/>`
+    : `<rect x="12" y="16" width="72" height="68" rx="${boxy ? 16 : 32}" fill="${fill}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
+    <path d="M48 9v17" stroke="${fill}" stroke-width="5"/>
+    <circle cx="48" cy="9" r="5" fill="${fill}"/>
+    ${body}
+    <rect x="22" y="36" width="52" height="28" rx="14" fill="#14161b"/>
+    <rect x="34" y="43" width="7" height="14" rx="3.5" fill="#9ff5d6"/>
+    <rect x="55" y="43" width="7" height="14" rx="3.5" fill="#9ff5d6"/>
+  </svg>`;
 }
 
 // ---------------------------------------------------------------- the look of one screen

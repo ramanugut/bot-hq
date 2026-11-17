@@ -4,12 +4,12 @@
 # On the computer: scripts/install-on-computer.sh <the .tgz> does the rest (it is also inside the pack).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-out="${1:-hq-app.tgz}"
+out="${1:-botly-app.tgz}"
 rm -rf server/dist web/dist
 npm run build
 tar -czf "$out" \
-  package.json package-lock.json .env.example \
+  LICENSE THIRD_PARTY_NOTICES.md package.json package-lock.json .env.example \
   server/package.json server/dist server/box \
-  web/package.json web/dist web/src/avatar/shapes.gen.ts \
-  scripts/install-on-computer.sh scripts/add-hq-to-hermes.py scripts/sign-in-link.sh
+  web/package.json web/dist \
+  scripts/install-on-computer.sh scripts/add-botly-to-hermes.py scripts/sign-in-link.sh
 echo "packed $(du -h "$out" | cut -f1) -> $out"

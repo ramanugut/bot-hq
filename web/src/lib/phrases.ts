@@ -1,30 +1,5 @@
 import type { ActivityKind, LiveState, Row } from '@shared/types';
 
-/** textKind → phrase table from docs/research/03-ui-design.md §2.4. Arrays rotate. */
-const PHRASES: Record<string, string[]> = {
-  thinking: ['Thinking it through', 'Mulling it over', 'Putting it together'],
-  working: ['Getting it done', 'Making progress', 'Working on it', 'Handling it', 'Chipping away'],
-  searching_web: ['Digging around'],
-  reading_web: ['Doing some reading'],
-  browsing_web: ['Clicking through pages'],
-  reading_file: ['Reading the file'],
-  drafting_file: ['Jotting it down'],
-  organizing_files: ['Moving files over'],
-  on_your_computer: ['Working on your computer'],
-  on_its_computer: ['Clicking around'],
-  running_commands: ['Running a few commands'],
-  waiting_on_command: ['Waiting on results'],
-  coding: ['Writing some code'],
-  generating_photo: ['Sketching something up'],
-  generating_video: ['Filming a clip'],
-  messaging_assistant: ['Checking with another Bot'],
-  messaging: ['Sending a message'],
-  connecting_app: ['Working in a connected app'],
-  waiting_for_you: ['Needs your input'],
-  checking_usage: ['Checking your usage'],
-  remembering: ['Making a note of it'],
-};
-
 const nice = (s?: string) => !!s && !/[_]/.test(s) && !/^[a-z0-9-]+$/.test(s);
 
 /** Name of the bot being messaged: the running call's `bot_name` argument, else a readable `detail`. */
@@ -35,18 +10,19 @@ function messagedName(live: LiveState, rows: Row[]): string | null {
   return nice(live.activity?.detail) ? live.activity!.detail! : null;
 }
 
-/** Phrase for the live caption when the server sent none. `tick` rotates multi-phrase kinds. */
-export function activityPhrase(live: LiveState, rows: Row[], tick: number): string {
-  const a = live.activity;
-  if (!a) return live.awaiting ? 'Needs your input' : 'Working on it';
-  const kind = a.kind as ActivityKind;
-  if (kind === 'messaging_named') {
-    const name = messagedName(live, rows);
-    return name ? `Checking with ${name}` : 'Checking with another Bot';
-  }
-  if (kind === 'connecting_service') return nice(a.detail) ? `Working in ${a.detail}` : 'Working in a connected app';
-  const list = PHRASES[kind] ?? PHRASES.working;
-  return list[tick % list.length];
+const FILLER = new Set(['a', 'an', 'the', 'few', 'some', 'it', 'its', 'your', 'on', 'over', 'up', 'down', 'through', 'around', 'bit', 'little']);
+const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').split(/\s+/).filter((w) => w && !FILLER.has(w));
+
+/** True when a caption only restates the status ("Running a few commands" under "Running commands"). */
+export function repeatsStatus(caption: string, status: string): boolean {
+  const c = words(caption);
+  const s = words(status);
+  if (!c.length) return true;
+  if (!s.length) return false;
+  const stem = (w: string) => w.replace(/(ing|ed|s)$/, '');
+  const sStems = new Set(s.map(stem));
+  const shared = c.filter((w) => sStems.has(stem(w))).length;
+  return shared === c.length || (shared >= s.length && c.length <= s.length + 1);
 }
 
 /** One or two words for the status pill under the bot's name. */

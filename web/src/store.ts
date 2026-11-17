@@ -9,6 +9,11 @@ interface Transcript { generation: number; bySeq: Record<number, Row>; loaded: b
 interface State {
   user: User | null;
   devLogin: boolean;
+  googleLogin: boolean;
+  /** A short message shown at the bottom of the screen. */
+  notice: string | null;
+  /** Paid add-ons that are switched on: xAI voice, Composio apps. */
+  features: { voice: boolean; apps: boolean };
   authChecked: boolean;
 
   bots: Bot[];
@@ -29,6 +34,10 @@ interface State {
   viewerMode: 'watch' | 'control';
   /** One line shown under the large computer view while the person is driving (e.g. a sign-in to finish). */
   viewerHint: string | null;
+  /** The chat list of the open bot. */
+  chatsOpen: boolean;
+  /** Bumped per bot when its chat list changes, so an open list refetches. */
+  chatsVersion: Record<string, number>;
 
   checkAuth(): Promise<void>;
   loadBots(): Promise<void>;
@@ -42,15 +51,20 @@ interface State {
   set(p: Partial<State>): void;
 }
 
-const LS_SELECTED = 'grokbot.selectedBot';
-const LS_DETAILS = 'grokbot.detailsOpen';
-const LS_SIDEBAR = 'grokbot.sidebarCollapsed';
+const LS_SELECTED = 'botly.selectedBot';
+const LS_DETAILS = 'botly.detailsOpen';
+/** Phone-sized screen: one pane at a time, the sidebar and details slide over the chat. */
+export const isPhone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 760px)').matches;
+const LS_SIDEBAR = 'botly.sidebarCollapsed';
 const lsGet = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
 
 export const useStore = create<State>((set, get) => ({
   user: null,
   devLogin: false,
+  googleLogin: false,
+  notice: null,
+  features: { voice: false, apps: false },
   authChecked: false,
   bots: [],
   live: {},
@@ -60,17 +74,20 @@ export const useStore = create<State>((set, get) => ({
   computer: null,
   connectionsVersion: 0,
   sseConnected: false,
-  detailsOpen: lsGet(LS_DETAILS) !== '0',
-  sidebarCollapsed: lsGet(LS_SIDEBAR) === '1',
+  detailsOpen: isPhone() ? false : lsGet(LS_DETAILS) !== '0',
+  sidebarCollapsed: isPhone() ? !!lsGet(LS_SELECTED) : lsGet(LS_SIDEBAR) === '1',
   modal: null,
   viewerOpen: false,
   viewerMode: 'watch',
   viewerHint: null,
+  chatsOpen: false,
+  chatsVersion: {},
 
   async checkAuth() {
     try {
-      const { user, devLogin } = await api.me();
-      set({ user, devLogin, authChecked: true });
+      const { user, devLogin, googleLogin, features } = await api.me();
+      set({ user, devLogin, googleLogin: !!googleLogin, features: features ?? { voice: false, apps: false }, authChecked: true });
+      if (user) { try { void api.setTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone).catch(() => {}); } catch { /* old browser */ } }
     } catch {
       set({ user: null, authChecked: true });
     }
@@ -89,6 +106,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   selectBot(id) {
+    if (get().selectedBotId !== id) set({ chatsOpen: false });
     set({ selectedBotId: id });
     lsSet(LS_SELECTED, id);
     const t = get().transcripts[id];
@@ -147,7 +165,13 @@ export const useStore = create<State>((set, get) => ({
         s.upsertRows(ev.botId, ev.generation, ev.rows);
         return;
       case 'cleared':
-        set((st) => ({ transcripts: { ...st.transcripts, [ev.botId]: { generation: ev.generation, bySeq: {}, loaded: true } } }));
+        // Another chat was opened (reload) or a new empty one started.
+        set((st) => ({ transcripts: { ...st.transcripts, [ev.botId]: { generation: ev.generation, bySeq: {}, loaded: !ev.reload } } }));
+        if (ev.reload) s.loadRows(ev.botId).catch(console.error);
+        set((st) => ({ chatsVersion: { ...st.chatsVersion, [ev.botId]: (st.chatsVersion[ev.botId] ?? 0) + 1 } }));
+        return;
+      case 'chats':
+        set((st) => ({ chatsVersion: { ...st.chatsVersion, [ev.botId]: (st.chatsVersion[ev.botId] ?? 0) + 1 } }));
         return;
       case 'live':
         set((st) => ({ live: { ...st.live, [ev.state.botId]: ev.state } }));
@@ -171,7 +195,7 @@ export const useStore = create<State>((set, get) => ({
       case 'tasks':
       case 'memories':
         // Picked up by configStore.ts (Tasks view, Library/Tasks tabs, bot settings).
-        window.dispatchEvent(new CustomEvent('grokbot:event', { detail: ev }));
+        window.dispatchEvent(new CustomEvent('botly:event', { detail: ev }));
         return;
       case 'connections':
         set((st) => ({ connectionsVersion: st.connectionsVersion + 1 }));
@@ -182,8 +206,9 @@ export const useStore = create<State>((set, get) => ({
   setModal(modal) { set({ modal }); },
 
   set(p) {
-    if (p.detailsOpen !== undefined) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
-    if (p.sidebarCollapsed !== undefined) lsSet(LS_SIDEBAR, p.sidebarCollapsed ? '1' : '0');
+    // On a phone these are momentary (open a drawer, close it again): don't remember them for the desktop.
+    if (p.detailsOpen !== undefined && !isPhone()) lsSet(LS_DETAILS, p.detailsOpen ? '1' : '0');
+    if (p.sidebarCollapsed !== undefined && !isPhone()) lsSet(LS_SIDEBAR, p.sidebarCollapsed ? '1' : '0');
     set(p);
   },
 }));

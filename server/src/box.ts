@@ -6,7 +6,7 @@ import { orgo } from './orgo.js';
 
 /**
  * The box: the one Orgo computer every bot works on. When this server runs on that computer
- * (HQ_LOCAL=1) commands and files go straight to the local shell and disk; otherwise they go
+ * (BOTLY_LOCAL=1) commands and files go straight to the local shell and disk; otherwise they go
  * through Orgo's API to ORGO_COMPUTER_ID.
  */
 

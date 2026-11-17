@@ -109,7 +109,7 @@ const SHARED_ENV = [
 ];
 
 /** Parts of the primary agent's config a managed agent starts from, so it reaches the same models. */
-const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers'];
+const SHARED_CONFIG = ['model', 'providers', 'custom_providers', 'auxiliary', 'fallback_model', 'fallback_providers', 'image_gen'];
 
 function soul(b: any): string {
   const owner = (db.prepare('SELECT name FROM users WHERE id=?').get(b.user_id) as any)?.name ?? 'the user';
@@ -122,13 +122,43 @@ function soul(b: any): string {
   ].join('\n');
 }
 
-/** Rewrite the persona file after a rename or a new description. The primary agent keeps its own. */
+/** Rewrite the persona file after a rename or a new description. The primary agent keeps its own, and a soul the user wrote stays. */
 export function syncPersona(botId: string) {
   const b = botRow(botId);
-  if (!b || b.engine !== 'managed') return;
+  if (!b || b.engine !== 'managed' || b.soul_custom) return;
   const home = homeFor(botId);
   if (!fs.existsSync(home)) return;
   fs.writeFileSync(path.join(home, 'SOUL.md'), soul(b));
+}
+
+// ---------- the soul (SOUL.md): who the bot is, editable in Bot settings ----------
+
+const soulFile = (botId: string): string | null => {
+  const home = engineHome(botId);
+  return home ? path.join(home, 'SOUL.md') : null;
+};
+
+export const SOUL_MAX = 20_000;
+
+/** The bot's soul as Hermes reads it. `custom` = the user wrote it (renames no longer rewrite it). */
+export function readSoul(botId: string): { text: string; custom: boolean; suggested: string } {
+  const b = botRow(botId);
+  const suggested = b ? soul(b) : '';
+  const file = soulFile(botId);
+  let text = '';
+  try { if (file) text = fs.readFileSync(file, 'utf8'); } catch { /* not written yet */ }
+  return { text: text || suggested, custom: !!b?.soul_custom, suggested };
+}
+
+/** Save the soul, or put the app's default back (text = null). */
+export function writeSoul(botId: string, text: string | null) {
+  const b = botRow(botId);
+  const file = soulFile(botId);
+  if (!b || !file) throw new Error('This bot has no engine yet; send it a message first.');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const body = text === null ? soul(b) : text.slice(0, SOUL_MAX);
+  fs.writeFileSync(file, body.endsWith('\n') ? body : `${body}\n`);
+  db.prepare('UPDATE bots SET soul_custom=? WHERE id=?').run(text === null ? 0 : 1, botId);
 }
 
 function extraMcpServers(): Record<string, any> {
@@ -163,7 +193,7 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
     }
   }
 
-  const cwd = env.localBox ? `/root/grokbot/files/${botId}` : path.join(home, 'workspace');
+  const cwd = env.localBox ? `/root/botly/files/${botId}` : path.join(home, 'workspace');
   fs.mkdirSync(cwd, { recursive: true });
 
   const cfgFile = path.join(home, 'config.yaml');
@@ -176,11 +206,16 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   }
   cfg.platform_toolsets = { ...(cfg.platform_toolsets ?? {}), api_server: ['hermes-api-server', ...(display ? ['computer_use'] : [])] };
   cfg.terminal = { ...(cfg.terminal ?? {}), cwd };
+  // Nobody can answer Hermes' own approval prompts through the app, so a prompt would only time out.
+  // BOTLY_AGENT_APPROVALS=off lets bots act on their own screen (Hermes' hard blocks still apply).
+  if (env.agentApprovals) cfg.approvals = { ...(cfg.approvals ?? {}), mode: env.agentApprovals };
   if (cdp) cfg.browser = { ...(cfg.browser ?? {}), cdp_url: cdp };
+  const existingMcp = { ...(cfg.mcp_servers ?? {}) };
+  if (String(existingMcp.hq?.url ?? '').endsWith(`/mcp/${botId}`)) delete existingMcp.hq;
   cfg.mcp_servers = {
-    ...(cfg.mcp_servers ?? {}),
+    ...existingMcp,
     ...extraMcpServers(),
-    hq: { url: `${env.mcpBaseUrl}/mcp/${botId}`, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
+    botly: { url: `${env.mcpBaseUrl}/mcp/${botId}`, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
   writePrivate(cfgFile, YAML.stringify(cfg));
 

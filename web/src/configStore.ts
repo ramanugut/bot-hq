@@ -5,7 +5,7 @@ import { useStore } from './store';
 /** UI state for bot settings, app settings, the Tasks view and the theme. Kept apart from store.ts on purpose. */
 
 export type Theme = 'system' | 'light' | 'dark';
-export type BotSettingsTab = 'general' | 'skills' | 'memories' | 'routines';
+export type BotSettingsTab = 'general' | 'soul' | 'skills' | 'memories' | 'routines';
 export type AppSection = 'general' | 'computer' | 'permissions' | 'apps' | 'account';
 
 interface ConfigUI {
@@ -24,7 +24,7 @@ interface ConfigUI {
   bump(key: string): void;
 }
 
-const LS_THEME = 'grokbot.theme';
+const LS_THEME = 'botly.theme';
 const readTheme = (): Theme => {
   try { const t = localStorage.getItem(LS_THEME); return t === 'light' || t === 'dark' ? t : 'system'; } catch { return 'system'; }
 };
@@ -61,7 +61,7 @@ applyTheme(readTheme());
 darkQuery?.addEventListener?.('change', () => { if (useConfigUI.getState().theme === 'system') applyTheme('system'); });
 
 // store.ts forwards events it doesn't handle itself as a DOM event.
-window.addEventListener('grokbot:event', (e) => {
+window.addEventListener('botly:event', (e) => {
   const ev = (e as CustomEvent<ServerEvent>).detail;
   const { bump } = useConfigUI.getState();
   if (ev.type === 'tasks') { bump('tasks'); bump(`tasks:${ev.botId}`); }

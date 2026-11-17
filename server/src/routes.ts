@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import { Readable } from 'node:stream';
 import crypto from 'node:crypto';
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -6,23 +8,28 @@ import { env } from './env.js';
 import { newId } from './lib/ids.js';
 import { hub } from './lib/hub.js';
 import { createSession, destroySession, isOwnerKey, requireUser, userFromCookieHeader, type AuthVars } from './lib/auth.js';
-import { allLive, appendRow, clearConversation, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
+import { allLive, appendRow, archiveChat, clearConversation, deleteChat, listChats, mergeChats, openChat, renameChat, emitBot, getBot, getBotRow, getRow, listBots, listRoutines, listRows, listTasks, toRoutine, updateRow } from './store.js';
 import { enqueue, interrupt, resolveApproval } from './agent/loop.js';
+import { LIBRARY_ROOT } from './agent/tools.js';
 import { computerState, ensureComputer, forgetBotFiles, readyScreen, refreshComputer, releaseScreen, suspendComputer } from './computer.js';
 import { assignEngine, provisionEngine, removeEngine, syncPersona } from './engine.js';
 import { deleteMemory, listMemories, memoryBot } from './engine-memory.js';
 import { orgo } from './orgo.js';
-import { catalog, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
+import { hasComposio, catalog, connectedToolkits, deleteConnection, disconnect, googleProfile, startConnect, startGoogleLogin, toolkitInfo } from './composio.js';
 import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
-import type { AvatarColor, AvatarShape, Toolkit } from './types.js';
+import type { Attachment, AvatarColor, AvatarShape, Toolkit } from './types.js';
+import { chatgptUsage } from './usage.js';
+import { markPresent, notify, pushPublicKey, removeSubscription, saveSubscription } from './push.js';
+import { checkPassword, hashPassword, noteFailure, tooManyTries } from './lib/password.js';
 
 export const api = new Hono<AuthVars>();
 
 const SHAPES: AvatarShape[] = ['blob', 'pebble', 'bean', 'egg', 'squircle', 'tablet', 'capsule', 'cylinder', 'hex', 'gem', 'crystal', 'wedge', 'shield', 'dome', 'arch', 'cloud', 'teardrop', 'leaf', 'square', 'sparkle', 'clover', 'flower', 'heart', 'house', 'star'];
-const COLORS: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray'];
+const COLORS: AvatarColor[] = ['black', 'brown', 'red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'violet', 'magenta', 'gray',
+  'peach', 'coral', 'blush', 'lilac', 'sky', 'mint', 'lemon', 'lime', 'sage', 'caramel', 'berry', 'navy', 'cream'];
 
 function hashPick<T>(id: string, list: T[]): T {
   let h = 0x811c9dc5;
@@ -31,11 +38,11 @@ function hashPick<T>(id: string, list: T[]): T {
 }
 
 /** Thrown for things the user can fix; the message is shown to them. */
-class UserError extends Error {}
+export class UserError extends Error {}
 
 const agentCount = () => (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE(kind,'agent')<>'room' AND COALESCE(hidden,0)=0").get() as any).n as number;
 
-function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean }) {
+export function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean }) {
   // Every bot needs a screen of its own on the one shared computer.
   if (agentCount() >= env.maxBots) throw new UserError(`The team is full: the computer has room for ${env.maxBots} bots. Remove one to add another.`);
   const id = newId('bot');
@@ -64,7 +71,51 @@ function findOrCreateUser(email: string, name?: string, preferId?: string) {
 
 api.get('/auth/me', (c) => {
   const user = userFromCookieHeader(c.req.header('cookie'));
-  return c.json({ user, devLogin: env.devLogin });
+  return c.json({ user, devLogin: env.devLogin, googleLogin: hasComposio, passwordLogin: true, features: { voice: !!env.xaiKey, apps: hasComposio } });
+});
+
+// ---------- email + password ----------
+
+const clientIp = (c: any) => (c.req.header('x-forwarded-for') ?? '').split(',')[0].trim() || 'local';
+
+api.post('/auth/password', async (c) => {
+  const { email, password } = await c.req.json<{ email?: string; password?: string }>().catch(() => ({} as any));
+  const ip = clientIp(c);
+  if (tooManyTries(ip)) return c.json({ error: 'Too many tries. Wait 15 minutes and try again.' }, 429);
+  const u = email ? (db.prepare('SELECT id, password_hash FROM users WHERE lower(email)=lower(?)').get(String(email).trim()) as any) : null;
+  if (!u || !password || !checkPassword(String(password), u.password_hash)) {
+    noteFailure(ip);
+    return c.json({ error: 'Wrong email or password.' }, 401);
+  }
+  createSession(c, u.id);
+  return c.json({ ok: true });
+});
+
+const esc = (t: string) => t.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+const page = (body: string) => `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Password</title>
+<style>body{font-family:system-ui,sans-serif;background:#111;color:#eee;display:flex;justify-content:center;padding:48px 16px}main{max-width:360px;width:100%}input,button{width:100%;box-sizing:border-box;padding:12px;margin:6px 0;border-radius:10px;border:1px solid #333;background:#1b1b1b;color:#eee;font-size:16px}button{background:#eee;color:#111;font-weight:600;cursor:pointer}a{color:#9cf}.err{color:#f88}</style></head><body><main>${body}</main></body></html>`;
+
+// Set or change the password of the signed-in user (open it in a browser that is already signed in).
+api.get('/auth/set-password', (c) => {
+  const user = userFromCookieHeader(c.req.header('cookie'));
+  if (!user) return c.html(page('<h2>Sign in first</h2><p>Open this page in a browser that is already signed in.</p>'), 401);
+  return c.html(page(`<h2>Password for ${esc(user.email)}</h2><p>Use it with your email to sign in on any device.</p>
+<form method="post"><input type="password" name="password" placeholder="New password (8+ characters)" minlength="8" required autocomplete="new-password">
+<input type="password" name="confirm" placeholder="Same password again" minlength="8" required autocomplete="new-password"><button>Save password</button></form>`));
+});
+
+api.post('/auth/set-password', async (c) => {
+  const user = userFromCookieHeader(c.req.header('cookie'));
+  if (!user) return c.html(page('<h2>Sign in first</h2>'), 401);
+  // Only from our own page: a form on another site must not be able to set the password.
+  const origin = c.req.header('origin');
+  if (origin && origin !== new URL(env.appUrl).origin) return c.html(page('<p class="err">Refused.</p>'), 403);
+  const f = await c.req.parseBody();
+  const pw = String(f.password ?? '');
+  if (pw.length < 8) return c.html(page('<p class="err">Use at least 8 characters.</p><a href="">Try again</a>'), 400);
+  if (pw !== String(f.confirm ?? '')) return c.html(page('<p class="err">The two passwords are not the same.</p><a href="">Try again</a>'), 400);
+  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(pw), user.id);
+  return c.html(page(`<h2>Saved</h2><p>Sign in on any device with <b>${esc(user.email)}</b> and this password.</p><a href="/">Back to the app</a>`));
 });
 
 api.get('/auth/google/start', async (c) => {
@@ -115,10 +166,15 @@ const signInLinks = new Map<string, { userId: string; expires: number }>();
 // With `link`, it answers with a link that signs one browser in, once (scripts/sign-in-link.sh).
 api.post('/auth/owner', async (c) => {
   if (!isOwnerKey((c.req.header('authorization') ?? '').replace(/^Bearer\s+/i, ''))) return c.json({ error: 'forbidden' }, 403);
-  const { email, name, link } = await c.req.json<{ email: string; name?: string; link?: boolean }>();
+  const { email, name, link, password } = await c.req.json<{ email: string; name?: string; link?: boolean; password?: string }>();
   if (!email?.includes('@')) return c.json({ error: 'email required' }, 400);
   try {
     const { id } = findOrCreateUser(email, name);
+    if (typeof password === 'string') {
+      if (password.length < 8) return c.json({ error: 'Use at least 8 characters.' }, 400);
+      db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hashPassword(password), id);
+      return c.json({ ok: true, password: 'set' });
+    }
     if (link) {
       const token = crypto.randomBytes(24).toString('base64url');
       signInLinks.set(token, { userId: id, expires: Date.now() + 15 * 60_000 });
@@ -146,6 +202,49 @@ api.post('/auth/logout', (c) => { destroySession(c); return c.json({ ok: true })
 api.use('/*', async (c, next) => {
   if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/apps/callback') || c.req.path === '/api/health') return next();
   return requireUser(c, next);
+});
+
+// ---------- notifications ----------
+api.get('/push/key', (c) => c.json({ key: pushPublicKey() }));
+api.post('/push/subscribe', async (c) => {
+  try { saveSubscription(c.get('user').id, await c.req.json()); return c.json({ ok: true }); } catch (e: any) { return c.json({ error: e.message }, 400); }
+});
+api.post('/push/unsubscribe', async (c) => {
+  const { endpoint } = await c.req.json<{ endpoint?: string }>().catch(() => ({} as any));
+  if (endpoint) removeSubscription(c.get('user').id, endpoint);
+  return c.json({ ok: true });
+});
+api.post('/push/test', async (c) => { await notify(c.get('user').id, { title: 'Botly', body: 'Notifications are working.', tag: 'test' }, true); return c.json({ ok: true }); });
+// The app window is visible: hold back notifications for things the user can already see.
+// Backups contain authentication files. A signed-in session alone cannot authorize download.
+api.post('/backups/latest', async (c) => {
+  const user = c.get('user');
+  if (!env.ownerEmail || user.email.toLowerCase() !== env.ownerEmail) return c.json({ error: 'Owner access required.' }, 403);
+  const attemptKey = `backup:${user.id}`;
+  if (tooManyTries(attemptKey, 5)) return c.json({ error: 'Too many attempts. Try again later.' }, 429);
+  const payload = await c.req.json<{ password?: string }>().catch((): { password?: string } => ({}));
+  const record = db.prepare('SELECT password_hash FROM users WHERE id=?').get(user.id) as { password_hash: string | null } | undefined;
+  if (!payload.password || !checkPassword(String(payload.password), record?.password_hash)) {
+    noteFailure(attemptKey);
+    return c.json({ error: 'Confirm your account password before downloading. Set a password in account settings if needed.' }, 403);
+  }
+  const dir = '/opt/botly/backups';
+  let files: string[] = [];
+  try { files = fs.readdirSync(dir).filter((f) => /^(?:botly|bothq)-\d{8}-\d{4}\.tar\.gz$/.test(f)).sort((a, b) => a.slice(a.indexOf('-') + 1).localeCompare(b.slice(b.indexOf('-') + 1))); } catch { /* none yet */ }
+  const f = files.pop();
+  if (!f) return c.text('No backup yet. The first one is made tonight, or run: bash /opt/botly/app/scripts/backup.sh', 404);
+  const full = `${dir}/${f}`;
+  return new Response(Readable.toWeb(fs.createReadStream(full)) as ReadableStream, { headers: { 'content-type': 'application/gzip', 'content-length': String(fs.statSync(full).size), 'content-disposition': `attachment; filename="${f}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' } });
+});
+api.get('/usage', async (c) => c.json({ usage: await chatgptUsage() }));
+api.post('/presence', (c) => { markPresent(c.get('user').id); return c.json({ ok: true }); });
+
+// The browser tells us the user's time zone, so "8am" in a routine means their 8am.
+api.post('/me/timezone', async (c) => {
+  const { tz } = await c.req.json<{ tz?: string }>().catch(() => ({} as any));
+  try { new Intl.DateTimeFormat('en', { timeZone: String(tz) }); } catch { return c.json({ error: 'bad time zone' }, 400); }
+  db.prepare('UPDATE users SET timezone=? WHERE id=?').run(String(tz), c.get('user').id);
+  return c.json({ ok: true });
 });
 
 // ---------- events (SSE) ----------
@@ -193,7 +292,13 @@ api.patch('/bots/:id', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const p = await c.req.json();
-  const cols: Record<string, string> = { name: 'name', label: 'label', description: 'description', instructions: 'instructions', avatarShape: 'avatar_shape', avatarColor: 'avatar_color', mode: 'mode', effort: 'effort', pinned: 'pinned', voice: 'voice', voiceSpeed: 'voice_speed', voiceLanguage: 'voice_language' };
+  const cols: Record<string, string> = { name: 'name', label: 'label', description: 'description', instructions: 'instructions', avatarShape: 'avatar_shape', avatarColor: 'avatar_color', mode: 'mode', effort: 'effort', pinned: 'pinned', voice: 'voice', voiceSpeed: 'voice_speed', voiceLanguage: 'voice_language', heartbeatChecklist: 'heartbeat_checklist', heartbeatQuiet: 'heartbeat_quiet' };
+  if (p.heartbeatMin !== undefined) {
+    const m = Number(p.heartbeatMin);
+    if (!Number.isFinite(m) || (m !== 0 && m < 30)) return c.json({ error: 'A heartbeat runs every 30 minutes at most often.' }, 400);
+    db.prepare('UPDATE bots SET heartbeat_min=?, heartbeat_last_at=?, updated_at=? WHERE id=?').run(Math.min(Math.round(m), 24 * 60), now(), now(), b.id);
+  }
+  if (typeof p.heartbeatChecklist === 'string') p.heartbeatChecklist = p.heartbeatChecklist.slice(0, 4000);
   for (const [k, col] of Object.entries(cols)) {
     if (p[k] !== undefined) db.prepare(`UPDATE bots SET ${col}=?, updated_at=? WHERE id=?`).run(typeof p[k] === 'boolean' ? (p[k] ? 1 : 0) : p[k], now(), b.id);
   }
@@ -257,13 +362,31 @@ api.get('/bots/:id/rows', (c) => {
 api.post('/bots/:id/messages', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
-  const { text } = await c.req.json<{ text: string }>();
-  if (!text?.trim()) return c.json({ error: 'empty' }, 400);
-  const row = appendRow(b.id, 'message', { type: 'message', role: 'user', text: text.trim() });
+  const { text, attachments } = await c.req.json<{ text: string; attachments?: { name?: string; path?: string; size?: number }[] }>();
+  // Attachments are files already uploaded to this bot's Library (uploads/...).
+  const files: Attachment[] = (Array.isArray(attachments) ? attachments : []).slice(0, 20).flatMap((a) => {
+    const path = String(a?.path ?? '');
+    if (!/^uploads\/[^/]+$/.test(path) || path.includes('..')) return [];
+    const ext = path.split('.').pop()!.toLowerCase();
+    const kind: Attachment['kind'] = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'heic', 'heif'].includes(ext) ? 'image'
+      : ['mp4', 'webm', 'mov', 'm4v', '3gp'].includes(ext) ? 'video' : ['mp3', 'm4a', 'wav', 'ogg', 'oga', 'opus', 'aac'].includes(ext) ? 'audio' : 'file';
+    return [{ name: String(a?.name ?? path.slice(8)).slice(0, 120), path, kind, ...(Number.isFinite(a?.size) ? { size: Number(a!.size) } : {}) }];
+  });
+  const typed = (text ?? '').trim();
+  if (!typed && !files.length) return c.json({ error: 'empty' }, 400);
+  const row = appendRow(b.id, 'message', { type: 'message', role: 'user', text: typed, ...(files.length ? { attachments: files } : {}) });
+  // The bot gets the files as paths on its computer, with a hint for how to look at each kind.
+  const how: Record<Attachment['kind'], string> = { image: 'image: look at it with your vision tool', video: 'video: ffmpeg can pull frames or the sound', audio: 'audio', file: 'read it with read_document' };
+  const forBot = files.length
+    ? `${typed || 'Here are some files.'}\n\nAttached files (saved on your computer):\n${files.map((f) => `- ${LIBRARY_ROOT}/${b.id}/${f.path} (${how[f.kind]})`).join('\n')}`
+    : typed;
   // Group chats dispatch to their member Bots instead of running their own loop.
-  if (b.kind === 'room') dispatchRoomMessage(b.id, text.trim(), enqueue);
+  if (b.kind === 'room') dispatchRoomMessage(b.id, forBot, enqueue);
   // Any pending question card is answered by a free-text message.
-  else enqueue(b.id, { type: 'user', text: text.trim() });
+  else {
+    answerPendingQuestions(b.id, typed || 'Sent files');
+    enqueue(b.id, { type: 'user', text: forBot });
+  }
   return c.json({ row });
 });
 
@@ -283,18 +406,83 @@ api.post('/bots/:id/fresh', (c) => {
   return c.json({ ok: true });
 });
 
+// ---------- chats (each bot keeps several; one is open) ----------
+
+api.get('/bots/:id/chats', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  return c.json({ chats: listChats(b.id) });
+});
+
+/** One handler for every chat action, so a failed check answers the same way. */
+api.post('/bots/:id/chats/:gen/:action', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const gen = Number(c.req.param('gen'));
+  if (!Number.isInteger(gen) || gen < 1) return c.json({ error: 'bad chat' }, 400);
+  const body = await c.req.json().catch(() => ({}));
+  try {
+    switch (c.req.param('action')) {
+      case 'open':
+        if (gen !== b.generation) interrupt(b.id); // its work would land in the other chat
+        openChat(b.id, gen);
+        break;
+      case 'rename':
+        renameChat(b.id, gen, String(body.title ?? ''));
+        break;
+      case 'archive':
+      case 'unarchive':
+        if (gen === b.generation) interrupt(b.id);
+        archiveChat(b.id, gen, c.req.param('action') === 'archive');
+        break;
+      case 'delete':
+        if (gen === b.generation) interrupt(b.id);
+        deleteChat(b.id, gen);
+        break;
+      case 'merge': {
+        const into = Number(body.into);
+        if (!Number.isInteger(into)) return c.json({ error: 'pick a chat to merge into' }, 400);
+        if (gen === b.generation || into === b.generation) interrupt(b.id);
+        mergeChats(b.id, gen, into);
+        break;
+      }
+      default:
+        return c.json({ error: 'unknown action' }, 400);
+    }
+  } catch (e: any) {
+    return c.json({ error: e?.message ?? String(e) }, 409);
+  }
+  emitBot(b.id);
+  return c.json({ ok: true, chats: listChats(b.id) });
+});
+
 api.post('/approvals/:id', async (c) => {
   const { decision } = await c.req.json<{ decision: 'allow' | 'always' | 'deny' }>();
   try { resolveApproval(c.get('user').id, c.req.param('id'), decision); } catch { return c.json({ error: 'not found' }, 404); }
   return c.json({ ok: true });
 });
 
+/** A typed reply answers any question card still waiting, so it does not sit there asking forever. */
+function answerPendingQuestions(botId: string, text: string) {
+  const gen = getBotRow(botId)?.generation;
+  const rows = db.prepare("SELECT seq, body FROM rows WHERE bot_id=? AND generation=? AND kind='card' AND body LIKE '%\"card\":\"question\"%' AND body LIKE '%\"status\":\"pending\"%'").all(botId, gen) as { seq: number; body: string }[];
+  for (const r of rows) {
+    try {
+      const body = JSON.parse(r.body);
+      if (body.card === 'question' && body.status === 'pending') updateRow(botId, r.seq, { ...body, status: 'answered', answer: text.slice(0, 500) });
+    } catch { /* not a card we understand */ }
+  }
+}
+
 api.post('/bots/:id/cards/:seq/answer', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
   const row = getRow(b.id, Number(c.req.param('seq')));
-  const { answer } = await c.req.json<{ answer: string }>();
+  const body = await c.req.json<{ answer?: string; answers?: string[] }>();
   if (!row || row.body.type !== 'card' || row.body.card !== 'question') return c.json({ error: 'not a question' }, 400);
+  // Several picks (a "pick all that apply" question) arrive as a list and read as one answer.
+  const answer = (Array.isArray(body.answers) && body.answers.length ? body.answers.map(String).join(', ') : String(body.answer ?? '')).trim().slice(0, 2000);
+  if (!answer) return c.json({ error: 'empty answer' }, 400);
   updateRow(b.id, row.seq, { ...row.body, status: 'answered', answer });
   appendRow(b.id, 'message', { type: 'message', role: 'user', text: answer });
   enqueue(b.id, { type: 'user', text: `[Answer to "${row.body.question}"] ${answer}` });
@@ -448,7 +636,7 @@ api.get('/apps/callback', async (c) => {
       }
     }
   }
-  return c.html(`<!doctype html><meta charset="utf-8"><title>Connected</title><body style="font-family:system-ui;padding:40px;text-align:center">${ok ? 'Connected. You can close this window.' : 'Connection failed.'}<script>try{window.opener&&window.opener.postMessage({type:'grokbot-connected',slug:${JSON.stringify(slug)},ok:${ok}},'*')}catch(e){};setTimeout(()=>window.close(),800)</script></body>`);
+  return c.html(`<!doctype html><meta charset="utf-8"><title>Connected</title><body style="font-family:system-ui;padding:40px;text-align:center">${ok ? 'Connected. You can close this window.' : 'Connection failed.'}<script>try{window.opener&&window.opener.postMessage({type:'botly-connected',slug:${JSON.stringify(slug)},ok:${ok}},'*')}catch(e){};setTimeout(()=>window.close(),800)</script></body>`);
 });
 
 api.delete('/apps/:slug', async (c) => {

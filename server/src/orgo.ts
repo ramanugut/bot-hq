@@ -1,4 +1,5 @@
 import { env } from './env.js';
+import { localScreens } from './localscreen.js';
 
 const BASE = 'https://www.orgo.ai/api';
 
@@ -50,7 +51,7 @@ export interface OrgoScreen { id: string; display: string; width: number; height
 
 const q = (screen?: string) => (screen && screen !== 'default' ? `?screen=${encodeURIComponent(screen)}` : '');
 
-export const orgo = {
+const orgoApi = {
   workspaces: () => call<any>('GET', '/workspaces'),
 
   getComputer: (id: string) => call<OrgoComputer>('GET', `/computers/${id}`),
@@ -81,3 +82,6 @@ export const orgo = {
   exportFile: (id: string, path: string) =>
     call<{ url?: string; file?: { id: string; url?: string; filename?: string }; [k: string]: unknown }>('POST', '/files/export', { desktopId: id, path }, { timeoutMs: 180_000 }),
 };
+
+/** Orgo's API, or this machine's own screens when running without Orgo (BOTLY_SCREENS=local). */
+export const orgo: typeof orgoApi = env.localScreens ? (localScreens as unknown as typeof orgoApi) : orgoApi;

@@ -27,7 +27,7 @@ import { box } from '../src/box.js';
 import { cdpPortFor, dressScreen, ensureDeskBase, openTerminal, resetScreen, undressScreen, type DeskBot } from '../src/desk.js';
 
 const SHOTS = process.env.DESK_SHOTS || path.join(os.tmpdir(), 'desk-test');
-const EVAL = '/tmp/hq-desk-test-eval.py';
+const EVAL = '/tmp/botly-desk-test-eval.py';
 
 const EXTRA_BOTS: DeskBot[] = [
   { id: 'bot_mira', name: 'Mira', label: 'Research', avatarShape: 'flower', avatarColor: 'violet' },
@@ -153,10 +153,10 @@ async function browsers(): Promise<Browser[]> {
     pid: Number(l.split(' ')[0]),
     profile: /--user-data-dir=(\S+)/.exec(l)?.[1] ?? '',
     port: Number(/--remote-debugging-port=(\d+)/.exec(l)?.[1] ?? 0),
-    ours: l.includes('--hq-screen='),
+    ours: l.includes('--botly-screen='),
   }));
 }
-const browserOf = (list: Browser[], botId: string) => list.find((b) => b.profile === `/root/grokbot/profiles/${botId}`);
+const browserOf = (list: Browser[], botId: string) => list.find((b) => b.profile === `/root/botly/profiles/${botId}`);
 const foreignPids = (list: Browser[]) => list.filter((b) => !b.ours).map((b) => b.pid).sort().join(',');
 
 /** What the home page in the Chrome on `port` says. */
@@ -170,7 +170,7 @@ const greets = (port: number, name: string) => until(async () => ((await homePag
 const windows = (screenId: string) => sh('wmctrl -l 2>/dev/null; true', screenId);
 const look = async (screenId: string) => {
   const n = screenId === 'default' ? 99 : Number(screenId.replace('screen-', ''));
-  const raw = await box.readFile(`/opt/hq/screens/${n}/look.json`);
+  const raw = await box.readFile(`/opt/botly/screens/${n}/look.json`);
   try { return raw ? JSON.parse(raw.toString('utf8')) : null; } catch { return null; }
 };
 
@@ -233,7 +233,7 @@ async function testExtras(ids: string[]): Promise<void> {
 
   const first = pairs[0];
   say(`\n== ${first.id}: wallpaper and dock, terminal, reset`);
-  await sh(`w=$(xdotool search --onlyvisible --class HQBrowser | head -1); wmctrl -i -r $w -b remove,maximized_vert,maximized_horz; sleep 0.4; xdotool windowsize $w 700 440 windowmove $w 300 70`, first.id);
+  await sh(`w=$(xdotool search --onlyvisible --class BotlyBrowser | head -1); wmctrl -i -r $w -b remove,maximized_vert,maximized_horz; sleep 0.4; xdotool windowsize $w 700 440 windowmove $w 300 70`, first.id);
   await sleep(1200);
   await shot(first.id, `${first.id}-wallpaper-and-dock`);
   await timed(`openTerminal ${first.id}`, () => openTerminal(first.id, `echo "Hello from ${first.bot.name}'s computer"; uname -sr; date`, 'Sign in'));
@@ -267,7 +267,7 @@ async function testDefault(): Promise<void> {
   const mine = browserOf(await browsers(), MAIN_BOT.id);
   check(!!mine && mine.port === cdpPortFor('default'), `default: Chrome runs with ${MAIN_BOT.name}'s profile on port ${cdpPortFor('default')}`);
   check(!!(await greets(cdpPortFor('default'), MAIN_BOT.name)), `default: home page greets ${MAIN_BOT.name}`);
-  await sh('w=$(xdotool search --onlyvisible --class HQBrowser | head -1); [ -n "$w" ] && xdotool windowactivate $w; true', 'default');
+  await sh('w=$(xdotool search --onlyvisible --class BotlyBrowser | head -1); [ -n "$w" ] && xdotool windowactivate $w; true', 'default');
   await sleep(800);
   await shot('default', 'default-managed-home');
   check(foreignPids(await browsers()) === others, 'default: Chromes that are not ours were left alone');
@@ -314,7 +314,7 @@ async function testDefault(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (box.local) throw new Error('this test drives a remote test computer through Orgo; run it without HQ_LOCAL');
+  if (box.local) throw new Error('this test drives a remote test computer through Orgo; run it without BOTLY_LOCAL');
   if (!env.orgoComputerId) throw new Error('set ORGO_COMPUTER_ID to the test computer');
   fs.mkdirSync(SHOTS, { recursive: true });
   say(`test computer ${env.orgoComputerId}, screenshots in ${SHOTS}`);

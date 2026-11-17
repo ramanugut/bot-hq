@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { BotAvatar } from '../avatar/BotAvatar';
 import { api } from '../lib/api';
 import { useStore } from '../store';
-import { TrafficLights } from './Sidebar';
 
 export function SignIn() {
   const devLogin = useStore((s) => s.devLogin);
+  const googleLogin = useStore((s) => s.googleLogin);
+  const [password, setPassword] = useState('');
   const checkAuth = useStore((s) => s.checkAuth);
   const [email, setEmail] = useState('');
   const [name, setName] = useState('');
@@ -19,18 +20,32 @@ export function SignIn() {
     try { await api.devLogin(email.trim(), name.trim() || undefined); await checkAuth(); } catch (err) { setError((err as Error).message); setBusy(false); }
   };
 
+  const signIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.includes('@')) { setError('Enter your email address'); return; }
+    if (!password) { setError('Enter your password'); return; }
+    setBusy(true); setError(null);
+    try { await api.passwordLogin(email.trim(), password); await checkAuth(); } catch (err) { setError((err as Error).message); setBusy(false); }
+  };
+
   return (
     <div className="signin">
-      <div className="signin__chrome"><TrafficLights /></div>
       <div className="signin__card">
         <div className="signin__hero">
           <BotAvatar shape="blob" color="black" size={84} />
         </div>
-        <h1 className="signin__title">Grokbot</h1>
+        <h1 className="signin__title">Botly</h1>
         <p className="signin__sub">AI teammates with their own computers. Hand them a task and they get it done.</p>
-        <a className="btn btn--primary signin__google" href="/api/auth/google/start">
-          <GoogleG /> Sign in with Google
-        </a>
+        <form className="signin__dev" onSubmit={signIn}>
+          <input className="text-input" type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} aria-label="Email" autoComplete="username" />
+          <input className="text-input" type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" autoComplete="current-password" />
+          <button type="submit" className="btn btn--primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+        </form>
+        {googleLogin && (
+          <a className="btn btn--secondary signin__google" href="/api/auth/google/start">
+            <GoogleG /> Sign in with Google
+          </a>
+        )}
         {devLogin && (
           <form className="signin__dev" onSubmit={dev}>
             <div className="signin__divider"><span>Dev sign-in</span></div>
@@ -40,7 +55,6 @@ export function SignIn() {
           </form>
         )}
         {error && <div className="card__error signin__error">{error}</div>}
-        <p className="signin__foot">Open source. Not affiliated with xAI.</p>
       </div>
     </div>
   );

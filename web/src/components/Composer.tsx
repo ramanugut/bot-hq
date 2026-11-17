@@ -1,14 +1,29 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Bot } from '@shared/types';
 import { api } from '../lib/api';
-import { displayName, useStore } from '../store';
+import { useStore } from '../store';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
 import { endCall, isCallActive, startCall, useVoice } from '../voice/call';
 import { useDictation } from '../voice/dictation';
+import { browserDictationSupported, useBrowserDictation } from '../voice/browserDictation';
 
 const MAX_H = 200;
+
+/** Ready-made jobs: the text goes into the message box so you can adjust it before sending. */
+const RECIPES = [
+  { label: 'Social media autopilot', prompt: 'Set up a social media autopilot for my business [name, what we sell, prices, website]. Every Monday at 8am: plan 3 posts for the week (Facebook and Instagram), make an image for each with your image tool, write the captions, and show me the drafts here. Only post after I say yes, using the browser on your screen where I am logged in. Use create_routine for the weekly schedule.' },
+  { label: 'Job search assistant', prompt: 'Help me find jobs. Profile: [role, years of experience, skills, location or remote, minimum salary]. My CV is attached. Every weekday at 7am: search the job sites (PNet, LinkedIn, Careers24, Indeed SA) for new matching jobs and send me the best 5 with links and why they fit. For any I approve, write a tailored CV and cover letter as PDFs in your Library. Never apply without my yes. Use create_routine for the daily search.' },
+  { label: 'Support desk helper', prompt: 'Every morning at 8am, check [my support inbox or ticket system] in the browser on your screen, list the new tickets by urgency, and draft a reply for each. Show me the drafts here and only send the ones I approve. Use create_routine for the daily check.' },
+  { label: 'Daily briefing', prompt: 'Every weekday at 7:30am send me a short briefing: the weather in [city], important new emails in my Gmail (open it in your browser), anything on my calendar today, and [anything else]. Keep it to 8 lines. Use create_routine for the schedule.' },
+  { label: 'Promo video', prompt: 'Make a 15-second vertical promo video for [product/offer and price] with make_promo_video: 4 scenes, prices, a call to action at the end and a South African voice-over. Make images in the video\'s shape first if you need them.' },
+];
 const drafts = new Map<string, string>();
+
+interface PickedFile { id: string; name: string; size: number; type: string; preview?: string; rel?: string; error?: string }
+
+const fileIcon = (type: string, name: string) =>
+  type.startsWith('audio/') ? '🎵' : /\.pdf$/i.test(name) ? '📄' : /\.(xlsx?|csv)$/i.test(name) ? '📊' : /\.(docx?|txt|md)$/i.test(name) ? '📝' : '📎';
 
 export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const [text, setText] = useState(() => drafts.get(bot.id) ?? '');
@@ -17,6 +32,43 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
   const [menu, setMenu] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
   const setModal = useStore((s) => s.setModal);
+  const features = useStore((s) => s.features);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [attachOpen, setAttachOpen] = useState(false);
+  /** Files picked for the next message: uploaded straight away, previewed from the device while they upload. */
+  const [files, setFiles] = useState<PickedFile[]>([]);
+  const uploading = files.filter((f) => !f.rel && !f.error).length;
+  const attach = async (list: FileList | File[] | null) => {
+    const picked = Array.from(list ?? []);
+    if (!picked.length) return;
+    const items: PickedFile[] = picked.map((f) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      name: f.name || 'file', size: f.size, type: f.type,
+      preview: /^(image|video)\//.test(f.type) ? URL.createObjectURL(f) : undefined,
+    }));
+    setFiles((cur) => [...cur, ...items]);
+    await Promise.all(picked.map(async (f, i) => {
+      const id = items[i].id;
+      try {
+        const r = await api.upload(bot.id, f);
+        setFiles((cur) => cur.map((x) => (x.id === id ? { ...x, rel: r.rel, name: r.name } : x)));
+      } catch (e) {
+        setFiles((cur) => cur.map((x) => (x.id === id ? { ...x, error: (e as Error).message } : x)));
+      }
+    }));
+  };
+  const removeFile = (id: string) => setFiles((cur) => {
+    const f = cur.find((x) => x.id === id);
+    if (f?.preview) URL.revokeObjectURL(f.preview);
+    return cur.filter((x) => x.id !== id);
+  });
+  // Pasting a screenshot or photo attaches it.
+  const onPaste = (e: React.ClipboardEvent) => {
+    const pasted = Array.from(e.clipboardData.files ?? []);
+    if (pasted.length) { e.preventDefault(); void attach(pasted); }
+  };
 
   // Per-bot drafts.
   useEffect(() => { setText(drafts.get(bot.id) ?? ''); setError(null); ref.current?.focus(); }, [bot.id]);
@@ -40,11 +92,14 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
 
   const send = async () => {
     const t = text.trim();
-    if (!t || sending) return;
+    const ready = files.filter((f) => f.rel);
+    if ((!t && !ready.length) || sending || uploading) return;
     setSending(true); setError(null);
     try {
-      await api.send(bot.id, t);
+      await api.send(bot.id, t, ready.map((f) => ({ name: f.name, path: f.rel!, size: f.size })));
       setText('');
+      files.forEach((f) => f.preview && URL.revokeObjectURL(f.preview));
+      setFiles([]);
       drafts.delete(bot.id);
     } catch (e) {
       setError((e as Error).message || 'Message failed to send');
@@ -72,38 +127,77 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
     });
   };
   const dictation = useDictation(insertText, setError, bot.voiceLanguage);
+  const freeDictation = useBrowserDictation(insertText, setError, bot.voiceLanguage);
   const inCall = useVoice((s) => isCallActive(s) && s.botId === bot.id);
 
-  const hasText = text.trim().length > 0;
+  const hasText = text.trim().length > 0 || files.some((f) => f.rel);
   const multiline = text.includes('\n') || (ref.current?.scrollHeight ?? 0) > 30;
 
   return (
     <div className="composer-area">
       {error && <div className="composer__error">{error} <button type="button" className="link-btn" onClick={() => setError(null)}>Dismiss</button></div>}
-      <div className={`composer${multiline ? ' is-multiline' : ''}`}>
+      {files.length > 0 && (
+        <div className="composer__files">
+          {files.map((f) => (
+            <span key={f.id} className={`composer__file${f.preview ? ' has-thumb' : ''}${f.error ? ' is-error' : ''}${!f.rel && !f.error ? ' is-busy' : ''}`} title={f.error ?? f.name}>
+              {f.preview && (f.type.startsWith('video/')
+                ? <video className="composer__thumb" src={f.preview} muted playsInline preload="metadata" />
+                : <img className="composer__thumb" src={f.preview} alt="" />)}
+              {!f.preview && <span className="composer__file-name">{fileIcon(f.type, f.name)} {f.name}</span>}
+              {!f.rel && !f.error && <span className="composer__spinner" aria-label="Uploading" />}
+              {f.error && <span className="composer__file-err">Failed</span>}
+              <button type="button" aria-label={`Remove ${f.name}`} onClick={() => removeFile(f.id)}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className={`composer${multiline ? ' is-multiline' : ''}`}
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); void attach(e.dataTransfer.files); }}>
         <div className="composer__left">
           <span className="composer__plus-anchor">
-            <button type="button" className="composer__btn" onClick={() => setMenu(!menu)} aria-label="More actions" aria-expanded={menu}>
-              <Icon name="composer_plus" opacity={0.56} />
+            <button type="button" className="composer__btn" onClick={() => setAttachOpen(!attachOpen)} aria-label="Attach" aria-expanded={attachOpen} title="Attach photos, videos or files">
+              <svg width="19" height="19" viewBox="0 0 20 20" aria-hidden style={{ opacity: 0.6 }}><path d="M14.5 9.5 9.6 14.4a3.2 3.2 0 0 1-4.5-4.5l5.6-5.6a2.1 2.1 0 0 1 3 3l-5.6 5.6a1 1 0 0 1-1.5-1.5l5-5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
+            {attachOpen && (
+              <Menu
+                placement="above"
+                onClose={() => setAttachOpen(false)}
+                items={[
+                  { label: 'Photos & videos', icon: 'image', onSelect: () => galleryRef.current?.click() },
+                  { label: 'Take a photo', icon: 'camera', onSelect: () => cameraRef.current?.click() },
+                  { label: 'Files', icon: 'file', onSelect: () => fileRef.current?.click() },
+                ]}
+              />
+            )}
+          </span>
+          <span className="composer__plus-anchor">
+            <button type="button" className="composer__btn" onClick={() => setMenu(!menu)} aria-label="Quick actions" aria-expanded={menu} title="Ready-made tasks, new conversation, connect apps">
+              <Icon name="sparkles" opacity={0.56} />
             </button>
             {menu && (
               <Menu
                 placement="above"
                 onClose={() => setMenu(false)}
                 items={[
-                  { label: 'New conversation', onSelect: fresh },
-                  { label: 'Connect apps', onSelect: () => setModal('apps') },
+                  ...RECIPES.map((r) => ({ label: r.label, icon: 'sparkles' as const, onSelect: () => { setText(r.prompt); requestAnimationFrame(() => ref.current?.focus()); } })),
+                  { label: 'New conversation', icon: 'plus' as const, onSelect: fresh },
+                  ...(features.apps ? [{ label: 'Connect apps', icon: 'apps' as const, onSelect: () => setModal('apps') }] : []),
                 ]}
               />
             )}
           </span>
+          <input ref={fileRef} type="file" multiple hidden onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} />
+          <input ref={galleryRef} type="file" accept="image/*,video/*" multiple hidden onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} />
+          <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={(e) => { void attach(e.target.files); e.target.value = ''; }} />
           <textarea
             ref={ref}
             className="composer__input"
             rows={1}
             value={text}
-            placeholder={`Message ${displayName(bot)}`}
+            placeholder={`Message ${bot.name}`}
             onChange={(e) => setText(e.target.value)}
+            onPaste={onPaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
             }}
@@ -111,6 +205,7 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           />
         </div>
         <div className="composer__right">
+          {features.voice ? (
           <button
             type="button"
             className={`composer__btn${dictation.state === 'recording' ? ' is-recording' : dictation.state === 'transcribing' ? ' is-transcribing' : ''}`}
@@ -125,6 +220,11 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
           >
             <Icon name="mic" opacity={0.56} />
           </button>
+          ) : browserDictationSupported() ? (
+            <button type="button" className={`composer__btn${freeDictation.recording ? ' is-recording' : ''}`} onClick={freeDictation.toggle} aria-label={freeDictation.recording ? 'Stop dictation' : 'Dictate'} aria-pressed={freeDictation.recording} title={freeDictation.recording ? 'Tap to stop' : 'Tap to dictate'}>
+              <Icon name="mic" opacity={0.56} />
+            </button>
+          ) : null}
           {inCall && !hasText ? (
             <button type="button" className="composer__cta is-in-call" onClick={endCall} aria-label="End voice call" title="End voice call">
               <Icon name="voice_a" size={16} />
@@ -137,12 +237,13 @@ export function Composer({ bot, running }: { bot: Bot; running: boolean }) {
             <button
               type="button"
               className="composer__cta"
-              onClick={hasText ? send : () => startCall(bot.id)}
-              disabled={hasText && sending}
-              aria-label={hasText ? 'Send' : `Start voice chat with ${bot.name}`}
+              onClick={hasText ? send : features.voice ? () => startCall(bot.id) : () => ref.current?.focus()}
+              disabled={(hasText && sending) || uploading > 0}
+              data-idle={!hasText && !features.voice ? '' : undefined}
+              aria-label={hasText ? 'Send' : features.voice ? `Start voice chat with ${bot.name}` : 'Send'}
               title={hasText ? 'Send (Enter)' : 'Start voice chat'}
             >
-              <Icon name={hasText ? 'arrow_up' : 'voice_a'} size={16} />
+              <Icon name={hasText || !features.voice ? 'arrow_up' : 'voice_a'} size={16} />
             </button>
           )}
         </div>

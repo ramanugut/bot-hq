@@ -6,7 +6,8 @@ export type AvatarShape =
   | 'square' | 'sparkle' | 'clover' | 'flower' | 'heart' | 'house' | 'star';
 
 export type AvatarColor =
-  | 'black' | 'brown' | 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'violet' | 'magenta' | 'gray';
+  | 'black' | 'brown' | 'red' | 'orange' | 'yellow' | 'green' | 'cyan' | 'blue' | 'violet' | 'magenta' | 'gray'
+  | 'peach' | 'coral' | 'blush' | 'lilac' | 'sky' | 'mint' | 'lemon' | 'lime' | 'sage' | 'caramel' | 'berry' | 'navy' | 'cream';
 
 export interface User { id: string; email: string; name: string; avatarUrl: string | null }
 
@@ -32,10 +33,28 @@ export interface Bot {
   model: string | null;
   provider: string | null;
   generation: number;
+  /** Heartbeat: check in every N minutes (0 = off), with this checklist; quiet at night when set. */
+  heartbeatMin: number;
+  heartbeatChecklist: string;
+  heartbeatQuiet: boolean;
+  heartbeatLastAt: number | null;
+  heartbeatLastNote: string | null;
   unread: number;
   lastPreview: string | null;
   lastActivityAt: number;
   createdAt: number;
+}
+
+/** One of a bot's chats (a "generation" of its conversation). */
+export interface ChatInfo {
+  generation: number;
+  title: string;
+  preview: string | null;
+  messages: number;
+  archived: boolean;
+  current: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** A transcript row. `seq` orders rows; `updatedSeq` is a per-bot revision counter (rows are rewritten while streaming). */
@@ -66,7 +85,11 @@ export interface MessageBody {
   /** Set when a message came from another bot, a routine or a voice call rather than the user typing. */
   from?: { kind: 'bot' | 'routine' | 'voice'; id: string; name: string };
   citations?: { url: string; title?: string }[];
+  /** Files the user attached, as paths inside the bot's Library (uploads/...). */
+  attachments?: Attachment[];
 }
+
+export interface Attachment { name: string; path: string; kind: 'image' | 'video' | 'audio' | 'file'; size?: number }
 
 export interface ToolCallBody {
   type: 'tool-call';
@@ -100,6 +123,12 @@ export type CardBody =
       card: 'question';
       question: string;
       options: string[];
+      /** One line under each option, same order as `options`. */
+      details?: string[];
+      /** Index of the option the bot recommends. */
+      recommended?: number;
+      /** More than one option may be picked. */
+      multiple?: boolean;
       status: 'pending' | 'answered' | 'dismissed';
       answer?: string;
     }
@@ -121,11 +150,21 @@ export type CardBody =
       text: string;
       approvalId: string;
       status: 'pending' | 'sent' | 'discarded';
+    }
+  | {
+      type: 'card';
+      card: 'image';
+      /** Path inside the bot's Library. */
+      path: string;
+      caption?: string;
+      /** What the file is; absent = an image (older rows). */
+      media?: 'image' | 'video' | 'audio';
+      status?: 'shown';
     };
 
 export interface EventBody {
   type: 'event';
-  event: 'routine-created' | 'routine-updated' | 'routine-run' | 'task-changed' | 'bot-message' | 'conversation-cleared' | 'computer' | 'voice-call';
+  event: 'routine-created' | 'routine-updated' | 'routine-run' | 'task-changed' | 'bot-message' | 'conversation-cleared' | 'computer' | 'voice-call' | 'chat-merged' | 'heartbeat';
   text: string;
   ref?: string;
   /** voice-call only: the call record (set on the end-of-call row). */
@@ -180,7 +219,7 @@ export interface ComputerState {
   orgoId: string | null;
   error: string | null;
   /** One screen per bot on the shared computer. width/height are the screen's pixel size. */
-  screens: { botId: string; screenId: string; width?: number; height?: number }[];
+  screens: { botId: string; screenId: string; width?: number; height?: number; asleep?: boolean }[];
   /** How many bots can have their own screen at once. */
   maxScreens?: number;
 }
@@ -219,7 +258,8 @@ export interface Toolkit {
 export type ServerEvent =
   | { type: 'hello'; serverTime: number }
   | { type: 'rows'; botId: string; generation: number; rows: Row[] }
-  | { type: 'cleared'; botId: string; generation: number }
+  | { type: 'cleared'; botId: string; generation: number; reload?: boolean }
+  | { type: 'chats'; botId: string }
   | { type: 'live'; state: LiveState }
   | { type: 'roster' }
   | { type: 'bot'; bot: Bot }

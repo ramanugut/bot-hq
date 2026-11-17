@@ -5,6 +5,8 @@ import { COLOR_ORDER, botVars, palette } from '../../lib/colors';
 import { configApi, type BotSettingsBundle } from '../../lib/configApi';
 import { useConfigUI, useVersion, type BotSettingsTab } from '../../configStore';
 import { useStore } from '../../store';
+import { api } from '../../lib/api';
+import { relativeShort } from '../../lib/time';
 import { Icon } from '../Icon';
 import { Modal } from '../modals/Modal';
 import { Glyph } from './glyphs';
@@ -49,6 +51,7 @@ export function BotSettingsModal() {
 
   const tabs: { id: BotSettingsTab; label: string; count?: number }[] = [
     { id: 'general', label: 'General' },
+    ...(bot.kind !== 'room' ? [{ id: 'soul' as const, label: 'Soul' }] : []),
     { id: 'skills', label: 'Skills', count: data?.skills.length },
     { id: 'memories', label: 'Memories', count: data?.memories.length },
     { id: 'routines', label: 'Routines', count: (routines ?? data?.routines)?.length },
@@ -75,6 +78,7 @@ export function BotSettingsModal() {
         <div className="cfg-content">
           {loadError && <div className="cfg-error">Couldn’t load settings: {loadError}</div>}
           {target.tab === 'general' && <GeneralTab bot={bot} onClose={onClose} />}
+          {target.tab === 'soul' && <SoulTab bot={bot} />}
           {target.tab === 'skills' && <SkillsTab bot={bot} skills={data?.skills} onChange={reload} />}
           {target.tab === 'memories' && <MemoriesTab bot={bot} data={data} onChange={reload} />}
           {target.tab === 'routines' && <RoutinesTab bot={bot} routines={routines ?? data?.routines} />}
@@ -169,12 +173,17 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
         <div className="cfg-card">
           <div className="cfg-row">
             <div className="cfg-row__text">
-              <div className="cfg-row__title">New conversation</div>
-              <div className="cfg-row__sub">Clears the chat. Memories, skills and routines stay.</div>
+              <div className="cfg-row__title">Chats</div>
+              <div className="cfg-row__sub">Open, rename, merge, archive or delete {bot.name}’s chats. Memories, skills and routines are shared by all of them.</div>
             </div>
-            <ConfirmButton className="cfg-btn cfg-btn--secondary" confirmLabel="Start fresh" onConfirm={async () => { await configApi.fresh(bot.id); flash('Started a new conversation'); }}>
-              Start new
-            </ConfirmButton>
+            <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => { onClose(); useStore.getState().selectBot(bot.id); useStore.getState().set({ chatsOpen: true }); }}>Show chats</button>
+          </div>
+          <div className="cfg-row">
+            <div className="cfg-row__text">
+              <div className="cfg-row__title">New chat</div>
+              <div className="cfg-row__sub">Starts an empty chat. The current one stays in the chat list.</div>
+            </div>
+            <button type="button" className="cfg-btn cfg-btn--secondary" onClick={async () => { try { await configApi.fresh(bot.id); flash('Started a new chat'); } catch (e) { flash((e as Error).message, 'error'); } }}>Start new</button>
           </div>
           {!bot.isPrimary && (
             <div className="cfg-row">
@@ -187,6 +196,8 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
           )}
         </div>
       </section>
+
+      {bot.kind !== 'room' && <HeartbeatSection bot={bot} />}
 
       <section className="cfg-section">
         <div className="cfg-section__label">Danger zone</div>
@@ -218,6 +229,112 @@ function GeneralTab({ bot, onClose }: { bot: Bot; onClose: () => void }) {
   );
 }
 
+/** The bot's SOUL.md: who it is, how it talks, what it cares about. Hermes reads it at the start of every chat. */
+function SoulTab({ bot }: { bot: Bot }) {
+  const [soul, setSoul] = useState<{ text: string; custom: boolean; suggested: string } | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
+  const flash = (text: string, tone: 'ok' | 'error' = 'ok') => { setNote({ text, tone }); setTimeout(() => setNote(null), 2600); };
+  useEffect(() => {
+    let alive = true;
+    configApi.soul(bot.id).then((r) => { if (alive) { setSoul(r); setDraft(r.text); } }).catch((e) => alive && flash(e.message, 'error'));
+    return () => { alive = false; };
+  }, [bot.id]);
+  const dirty = !!soul && draft !== soul.text;
+  const save = async (reset = false) => {
+    setBusy(true);
+    try {
+      const r = await configApi.saveSoul(bot.id, reset ? { reset: true } : { text: draft });
+      setSoul(r); setDraft(r.text);
+      flash(reset ? 'Back to the default soul' : `Saved. ${bot.name} follows it from the next message.`);
+    } catch (e) { flash((e as Error).message, 'error'); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="cfg-page">
+      <section className="cfg-section">
+        <div className="cfg-section__label">Soul</div>
+        <div className="cfg-field__hint">
+          Who {bot.name} is: personality, tone, values, what it cares about and how it talks to you and your customers.
+          Instructions (General tab) are rules for the work; the soul is the character. {soul?.custom ? 'You have written your own.' : 'This is the default the app wrote.'}
+        </div>
+        {!soul ? <div className="cfg-empty cfg-empty--flat">Loading…</div> : (
+          <textarea className="text-input cfg-textarea cfg-textarea--soul" value={draft} maxLength={20000} spellCheck
+            onChange={(e) => setDraft(e.target.value)} aria-label={`${bot.name}'s soul`}
+            placeholder={'e.g.\nYou are Marvelous, my chief of staff. Calm, sharp and a little dry.\nYou speak South African English and keep messages short.\nYou protect my time: push back on meetings that could be an email.'} />
+        )}
+        <div className="cfg-field__hint">{draft.length.toLocaleString()} / 20,000 characters. Markdown works.</div>
+      </section>
+      <div className={`cfg-savebar${dirty ? ' is-dirty' : ''}`}>
+        <span className={`cfg-savebar__note${note?.tone === 'error' ? ' is-error' : ''}`} role="status">{note?.text ?? (dirty ? 'Unsaved changes' : '')}</span>
+        {soul?.custom && !dirty && (
+          <ConfirmButton className="cfg-btn cfg-btn--secondary" confirmLabel="Reset soul" onConfirm={() => save(true)}>Reset to default</ConfirmButton>
+        )}
+        <button type="button" className="cfg-btn cfg-btn--secondary" disabled={!dirty || busy} onClick={() => soul && setDraft(soul.text)}>Discard</button>
+        <button type="button" className="cfg-btn cfg-btn--primary" disabled={!dirty || busy || !draft.trim()} onClick={() => save()}>{busy ? 'Saving…' : 'Save soul'}</button>
+      </div>
+    </div>
+  );
+}
+
+const HEARTBEAT_OPTIONS: { value: string; label: string }[] = [
+  { value: '0', label: 'Off' },
+  { value: '30', label: '30 min' },
+  { value: '60', label: '1 hour' },
+  { value: '120', label: '2 hours' },
+  { value: '240', label: '4 hours' },
+];
+
+/** Heartbeat: the bot checks in on its own every so often and only speaks up when something needs you. */
+function HeartbeatSection({ bot }: { bot: Bot }) {
+  const [checklist, setChecklist] = useState(bot.heartbeatChecklist);
+  const [note, setNote] = useState<{ text: string; tone: 'ok' | 'error' } | null>(null);
+  useEffect(() => { setChecklist(bot.heartbeatChecklist); }, [bot.id, bot.heartbeatChecklist]);
+  const flash = (text: string, tone: 'ok' | 'error' = 'ok') => { setNote({ text, tone }); setTimeout(() => setNote(null), 2400); };
+  const save = async (p: Parameters<typeof configApi.updateBot>[1], msg = 'Saved') => {
+    try {
+      const { bot: next } = await configApi.updateBot(bot.id, p);
+      useStore.setState((s) => ({ bots: s.bots.map((b) => (b.id === next.id ? next : b)) }));
+      flash(msg);
+    } catch (e) { flash((e as Error).message, 'error'); }
+  };
+  const every = String(bot.heartbeatMin ?? 0);
+  const options = HEARTBEAT_OPTIONS.some((o) => o.value === every) ? HEARTBEAT_OPTIONS : [...HEARTBEAT_OPTIONS, { value: every, label: `${bot.heartbeatMin} min` }];
+  const last = bot.heartbeatLastAt ? `Last check-in ${relativeShort(bot.heartbeatLastAt) === 'now' ? 'just now' : `${relativeShort(bot.heartbeatLastAt)} ago`}${bot.heartbeatLastNote ? `: ${bot.heartbeatLastNote}` : ''}` : 'No check-ins yet.';
+
+  return (
+    <section className="cfg-section">
+      <div className="cfg-section__label">Heartbeat</div>
+      <Field label="Check in on its own" hint={`${bot.name} looks through the checklist every so often and only messages you when something needs you. Each check-in uses a little of your ChatGPT allowance.`}>
+        <Segmented label="Heartbeat interval" value={every} options={options} onChange={(v) => save({ heartbeatMin: Number(v) }, Number(v) ? 'Heartbeat on' : 'Heartbeat off')} />
+      </Field>
+      <Field label="Checklist" htmlFor="cfg-heartbeat" hint="One thing to check per line. You can also just tell the Bot in chat what to keep an eye on.">
+        <textarea id="cfg-heartbeat" className="text-input cfg-textarea" rows={4} maxLength={4000} value={checklist}
+          placeholder={'e.g.\nNew emails from clients that need a reply\nOrders on the website that are stuck\nAnything due tomorrow'}
+          onChange={(e) => setChecklist(e.target.value)} onBlur={() => { if (checklist !== bot.heartbeatChecklist) void save({ heartbeatChecklist: checklist }); }} />
+      </Field>
+      <div className="cfg-card">
+        <div className="cfg-row">
+          <div className="cfg-row__text">
+            <div className="cfg-row__title">Quiet at night</div>
+            <div className="cfg-row__sub">No check-ins between 22:00 and 07:00 your time.</div>
+          </div>
+          <Switch label="Quiet at night" on={bot.heartbeatQuiet} onChange={(v) => save({ heartbeatQuiet: v })} />
+        </div>
+        <div className="cfg-row">
+          <div className="cfg-row__text">
+            <div className="cfg-row__title">Check in now</div>
+            <div className="cfg-row__sub">{last}</div>
+          </div>
+          <button type="button" className="cfg-btn cfg-btn--secondary" onClick={() => api.heartbeatNow(bot.id).then(() => flash('Checking in…')).catch((e) => flash(e.message, 'error'))}>Check in</button>
+        </div>
+      </div>
+      {note && <div className={`cfg-field__hint${note.tone === 'error' ? ' cfg-error' : ''}`} role="status">{note.text}</div>}
+    </section>
+  );
+}
+
 const SHAPE_ROWS = [PICKER_SHAPES.slice(0, 7), PICKER_SHAPES.slice(7)];
 
 function LookPicker({ shape, color, onShape, onColor }: { shape: AvatarShape; color: AvatarColor; onShape: (s: AvatarShape) => void; onColor: (c: AvatarColor) => void }) {
@@ -237,7 +354,7 @@ function LookPicker({ shape, color, onShape, onColor }: { shape: AvatarShape; co
       <div className="swatches" role="radiogroup" aria-label="Character color">
         <div className="swatches__row">
           {COLOR_ORDER.map((c) => (
-            <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={c} className="swatch-cell" onClick={() => onColor(c)}>
+            <button key={c} type="button" role="radio" aria-checked={color === c} aria-label={c} title={c} className="swatch-cell" onClick={() => onColor(c)}>
               <span className={`swatch${color === c ? ' is-selected' : ''}`} style={{ background: palette(c).fill }} />
             </button>
           ))}

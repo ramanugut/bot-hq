@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { botVars } from '../lib/colors';
 import { displayName, sortedRows, useSelectedBot, useStore } from '../store';
 import { useConfigUI } from '../configStore';
+import { ChatsPanel } from './ChatsPanel';
 import { Composer } from './Composer';
 import { Icon } from './Icon';
 import { Menu } from './Menu';
@@ -15,8 +16,10 @@ export function ChatView() {
   const transcript = useStore((s) => (bot ? s.transcripts[bot.id] : undefined));
   const live = useStore((s) => (bot ? s.live[bot.id] : undefined));
   const detailsOpen = useStore((s) => s.detailsOpen);
+  const chatsOpen = useStore((s) => s.chatsOpen);
   const set = useStore((s) => s.set);
   const [menu, setMenu] = useState(false);
+  const working = !!live?.isRunning;
   const [toast, setToast] = useState<string | null>(null);
   const rows = useMemo(() => sortedRows(transcript), [transcript]);
 
@@ -36,10 +39,13 @@ export function ChatView() {
       <VoiceCallBar />
       <Composer bot={bot} running={!!live?.isRunning} />
       <header className="chat__header">
+        <button type="button" className="icon-btn icon-btn--bordered chat__menu-btn" onClick={() => set({ sidebarCollapsed: false })} aria-label="Show bots">
+          <Icon name="sidebar" size={18} />
+        </button>
         <span className="chat__pill-anchor">
-          <button type="button" className="chat__pill" onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}>
+          <button type="button" className={`chat__pill${working ? ' is-working' : ''}`} onClick={() => setMenu(!menu)} aria-haspopup="menu" aria-expanded={menu}>
             <BotAvatarFor bot={bot} size={24} />
-            <span className="chat__pill-name">{displayName(bot)}</span>
+            <span className="chat__pill-name" title={displayName(bot)}>{bot.name}{bot.label && <span className="chat__pill-label"> · {bot.label}</span>}</span>
           </button>
           {menu && (
             <Menu
@@ -48,21 +54,26 @@ export function ChatView() {
               items={[
                 { label: detailsOpen ? 'Hide details' : 'Show details', hint: '⇧⌘,', onSelect: () => set({ detailsOpen: !detailsOpen }) },
                 { label: 'Open computer', onSelect: () => set({ viewerOpen: true, viewerMode: 'watch', viewerHint: null }) },
-                { label: 'New conversation', onSelect: () => api.fresh(bot.id).then(() => flash('Started a new conversation')).catch((e) => flash(e.message)) },
+                { label: 'All chats', onSelect: () => set({ chatsOpen: true }) },
+                { label: 'New chat', onSelect: () => api.fresh(bot.id).then(() => flash('Started a new chat')).catch((e) => flash(e.message)) },
                 { label: 'Bot settings', onSelect: () => useConfigUI.getState().openBotSettings(bot.id) },
               ]}
             />
           )}
         </span>
         <div className="chat__header-right">
+          <button type="button" className="icon-btn icon-btn--bordered chat__chats-btn" onClick={() => set({ chatsOpen: !chatsOpen })} aria-label="Chats" title="All chats with this Bot">
+            <Icon name="chats" size={17} />
+            <span>Chats</span>
+          </button>
           {!detailsOpen && (
             <button type="button" className="icon-btn icon-btn--bordered" onClick={() => set({ detailsOpen: true })} aria-label="Show details" title="Show details">
               <Icon name="sidebar" opacity={0.66} style={{ transform: 'scaleX(-1)' }} />
             </button>
           )}
-          <button type="button" className="share-btn" onClick={() => flash('Sharing isn’t available in Grokbot yet')}>Share</button>
         </div>
       </header>
+      {chatsOpen && <ChatsPanel bot={bot} />}
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
   );

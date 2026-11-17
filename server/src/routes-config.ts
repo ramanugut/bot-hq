@@ -8,11 +8,13 @@ import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { env } from './env.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
-import { computerState, readyScreen, resetBotScreen } from './computer.js';
+import { computerState, readyScreen, resetBotScreen, SCREEN_SLEEP_MIN, sleepScreen, wakeScreen } from './computer.js';
+import { isBotBusy } from './agent/loop.js';
+import { runHeartbeat } from './heartbeat.js';
 import { box } from './box.js';
 import { orgo } from './orgo.js';
 import { openTerminal } from './desk.js';
-import { engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen } from './engine.js';
+import { readSoul, SOUL_MAX, writeSoul, engineHome, engineInfo, engineKind, forgetEngineOptions, restartEngine, stopOwnScreen } from './engine.js';
 import { listMemories } from './engine-memory.js';
 import { idleConfig, viewerCount } from './idle.js';
 import type { LibraryFile, Skill } from './types.js';
@@ -34,6 +36,24 @@ const toSkill = (s: any): Skill => ({ id: s.id, botId: s.bot_id, name: s.name, d
 const listSkills = (botId: string) => (db.prepare('SELECT * FROM skills WHERE bot_id=? ORDER BY created_at ASC').all(botId) as any[]).map(toSkill);
 
 // ---------- settings bundle ----------
+
+// ---------- soul (SOUL.md) ----------
+
+configApi.get('/bots/:id/soul', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  return c.json(readSoul(b.id));
+});
+
+configApi.put('/bots/:id/soul', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const { text, reset } = await c.req.json<{ text?: string; reset?: boolean }>();
+  if (!reset && (typeof text !== 'string' || !text.trim())) return c.json({ error: 'The soul can’t be empty. Use Reset to go back to the default.' }, 400);
+  if (!reset && text!.length > SOUL_MAX) return c.json({ error: `Keep it under ${SOUL_MAX / 1000}k characters.` }, 400);
+  try { writeSoul(b.id, reset ? null : text!); } catch (e: any) { return c.json({ error: e?.message ?? String(e) }, 409); }
+  return c.json(readSoul(b.id));
+});
 
 configApi.get('/bots/:id/settings', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
@@ -196,9 +216,9 @@ configApi.post('/bots/:id/handback', (c) => {
   return c.json({ ok: true });
 });
 
-// ---------- library: files under /root/grokbot/files/<botId> on the bot's computer ----------
+// ---------- library: files under /root/botly/files/<botId> on the bot's computer ----------
 
-const LIB_ROOT = '/root/grokbot/files';
+const LIB_ROOT = '/root/botly/files';
 
 function safeRel(p: string | undefined): string | null {
   const rel = (p ?? '').replace(/^\/+|\/+$/g, '');
@@ -260,6 +280,22 @@ configApi.post('/bots/:id/files/download', async (c) => {
   }
 });
 
+// Files the user hands a bot (CVs, logos, photos). They land in the bot's Library under uploads/.
+configApi.post('/bots/:id/upload', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  const body = await c.req.parseBody().catch(() => null);
+  const f = body?.file;
+  if (!f || typeof f === 'string') return c.json({ error: 'no file' }, 400);
+  if (f.size > 60 * 1024 * 1024) return c.json({ error: 'Files can be up to 60 MB.' }, 413);
+  const base = (f.name || 'file').replace(/[^a-zA-Z0-9._ -]/g, '_').replace(/\s+/g, '-').slice(-100) || 'file';
+  const dir = `${LIB_ROOT}/${b.id}/uploads`;
+  let name = base;
+  for (let i = 2; fs.existsSync(`${dir}/${name}`); i++) name = base.replace(/(\.[^.]*)?$/, `-${i}$1`);
+  await box.writeFile(`${dir}/${name}`, Buffer.from(await f.arrayBuffer()));
+  return c.json({ ok: true, path: `${dir}/${name}`, rel: `uploads/${name}`, name, size: f.size });
+});
+
 configApi.get('/bots/:id/files/raw', (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
   if (!b || !box.local) return c.json({ error: 'not found' }, 404);
@@ -275,14 +311,34 @@ configApi.get('/bots/:id/files/raw', (c) => {
     return c.json({ error: 'not found' }, 404);
   }
   const name = rel.split('/').pop()!;
-  return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, {
-    headers: {
-      'content-type': 'application/octet-stream',
-      'content-length': String(fs.statSync(file).size),
-      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
-      'x-content-type-options': 'nosniff',
-    },
-  });
+  // Raster images, videos and audio can be shown in the chat (?inline=1). SVG/HTML stay downloads: they can carry scripts.
+  const INLINE: Record<string, string> = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+    mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', '3gp': 'video/3gpp',
+    mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', aac: 'audio/aac',
+  };
+  const type = c.req.query('inline') === '1' ? INLINE[name.split('.').pop()!.toLowerCase()] : undefined;
+  const size = fs.statSync(file).size;
+  const headers: Record<string, string> = {
+    'content-type': type ?? 'application/octet-stream',
+    'content-disposition': `${type ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(name)}`,
+    'x-content-type-options': 'nosniff',
+    'accept-ranges': 'bytes',
+    ...(type ? { 'cache-control': 'private, max-age=86400', 'content-security-policy': "default-src 'none'" } : {}),
+  };
+  // Phones fetch video in pieces (Range requests) and won't play or seek without them.
+  const range = /^bytes=(\d*)-(\d*)$/.exec(c.req.header('range') ?? '');
+  if (range && size > 0) {
+    let start = range[1] ? Number(range[1]) : size - Number(range[2]);
+    let end = range[1] && range[2] ? Number(range[2]) : size - 1;
+    start = Math.max(0, start); end = Math.min(size - 1, end);
+    if (start > end) return new Response(null, { status: 416, headers: { 'content-range': `bytes */${size}` } });
+    return new Response(Readable.toWeb(fs.createReadStream(file, { start, end })) as ReadableStream, {
+      status: 206,
+      headers: { ...headers, 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': String(end - start + 1) },
+    });
+  }
+  return new Response(Readable.toWeb(fs.createReadStream(file)) as ReadableStream, { headers: { ...headers, 'content-length': String(size) } });
 });
 
 // ---------- computer: screens, reset, hibernation ----------
@@ -293,8 +349,33 @@ configApi.get('/computer/details', (c) => {
   return c.json({
     computer: computerState(userId),
     screens: leases.map((l) => ({ botId: l.bot_id, screenId: l.screen_id, lastUsedAt: l.last_used_at })),
-    hibernation: { idleMinutes: idleConfig.idleMin, viewers: viewerCount(userId), dryRun: idleConfig.dryRun },
+    hibernation: { idleMinutes: env.localScreens ? SCREEN_SLEEP_MIN : idleConfig.idleMin, viewers: viewerCount(userId), dryRun: idleConfig.dryRun, perScreen: env.localScreens },
   });
+});
+
+/** Put a bot's screen to sleep now, or wake it. */
+configApi.post('/bots/:id/screen/:action{sleep|wake}', async (c) => {
+  const user = c.get('user');
+  const b = ownBot(user.id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  try {
+    if (c.req.param('action') === 'sleep') {
+      if (isBotBusy(b.id)) return c.json({ error: `${b.name} is working right now.` }, 409);
+      await sleepScreen(b.id);
+    } else await wakeScreen(user.id, b.id);
+    return c.json({ computer: computerState(user.id) });
+  } catch (e: any) {
+    return c.json({ error: String(e?.message ?? e).slice(0, 300) }, 502);
+  }
+});
+
+/** Run the bot's heartbeat check-in now. */
+configApi.post('/bots/:id/heartbeat', (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  if (isBotBusy(b.id)) return c.json({ error: `${b.name} is working right now; try again in a moment.` }, 409);
+  runHeartbeat(b.id);
+  return c.json({ ok: true });
 });
 
 /** Give a bot a clean screen: close what is open and bring its browser back to its home screen. Logins stay. */

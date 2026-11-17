@@ -1,13 +1,16 @@
+import crypto from 'node:crypto';
 import { db, now } from '../db.js';
 import { newId } from '../lib/ids.js';
 import { hub } from '../lib/hub.js';
-import { appendRow, emitBot, getBotRow, getLive, getRow, setLive, updateRow } from '../store.js';
+import { addChatNote, appendRow, dropRowsFrom, emitBot, getBotRow, getLive, getRow, setLive, takeChatNote, updateRow } from '../store.js';
+import { HEARTBEAT_OK } from '../heartbeat.js';
 import type { ActivityKind, MessageBody, ToolCallBody } from '../types.js';
 import { toolkitInfo } from '../composio.js';
 import { screenForWork } from '../computer.js';
-import { engineFor } from '../engine.js';
+import { engineFor, readSoul } from '../engine.js';
 import { instructionsFor } from './prompt.js';
-import { activityFor, appToolName, humanizeSlug, policyFor } from './tools.js';
+import { notifyBot } from '../push.js';
+import { activityFor, appToolName, humanizeSlug, policyFor, postImage, splitMedia } from './tools.js';
 
 /**
  * A turn: one message handed to the bot's Hermes engine and streamed back into the conversation.
@@ -24,7 +27,8 @@ export type Trigger =
   | { type: 'user'; text: string }
   | { type: 'routine'; routineId: string; name: string; prompt: string }
   | { type: 'bot'; fromBotId: string; fromName: string; text: string; depth: number }
-  | { type: 'system'; text: string };
+  | { type: 'system'; text: string }
+  | { type: 'heartbeat'; text: string };
 
 // ---------- per-bot serial queue ----------
 
@@ -69,6 +73,7 @@ function triggerText(t: Trigger): string {
     case 'routine': return `[Routine "${t.name}" is running now. Do this:]\n${t.prompt}`;
     case 'bot': return `[Message from ${t.fromName}, another Bot on the team. Reply to them with send_to_bot if they asked you something.]\n${t.text}`;
     case 'system': return `[System notice] ${t.text}`;
+    case 'heartbeat': return t.text;
   }
 }
 
@@ -306,6 +311,13 @@ async function runTurn(botId: string, trigger: Trigger) {
   const ctrl = new AbortController();
   aborts.set(botId, ctrl);
   const turn: Turn = { botId, userId, depth: trigger.type === 'bot' ? trigger.depth : 0, silent: false, tools: [], outcomes: new Map() };
+  // A heartbeat that finds nothing leaves no trace: remember where its rows start.
+  const heartbeat = trigger.type === 'heartbeat';
+  const startSeq: number = bot.next_seq;
+  const startGen: number = bot.generation;
+  const posted: string[] = [];
+  const hbOk = (t: string) => heartbeat && new RegExp(`^\\W*${HEARTBEAT_OK}\\W*$`, 'i').test(t.trim());
+  const hbStrip = (t: string) => (heartbeat ? t.replace(new RegExp(HEARTBEAT_OK, 'gi'), '').trim() : t);
   turns.set(botId, turn);
   setLive(botId, { isRunning: true, activity: { kind: 'thinking', since: now() }, awaiting: null, startedAt: now(), caption: null, steps: 0 });
 
@@ -320,20 +332,34 @@ async function runTurn(botId: string, trigger: Trigger) {
     else updateRow(botId, msgSeq, b);
     lastFlush = Date.now();
   };
+  const shareMedia = (paths: string[]) => {
+    for (const p of paths) void postImage(botId, p).then((r) => { if (!r.ok) appendRow(botId, 'notice', { type: 'notice', text: r.message, tone: 'error' }); }).catch(() => {});
+  };
   const closeMessage = () => {
     if (msgSeq === null) return;
+    const media = splitMedia(text);
+    if (media.paths.length) { text = media.text; shareMedia(media.paths); }
+    if (hbOk(text)) text = '';
+    else text = hbStrip(text);
     if (text.trim()) {
       flush(false);
+      posted.push(text.trim());
       db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
+      if (!turn.silent) notifyBot(botId, text.trim());
     } else updateRow(botId, msgSeq, { type: 'message', role: 'assistant', text: '', streaming: false });
     msgSeq = null;
     text = '';
   };
-  const say = (t: string) => {
+  const say = (raw: string) => {
+    const media = splitMedia(raw);
+    if (!turn.silent) shareMedia(media.paths);
+    const t = hbOk(media.text) ? '' : hbStrip(media.text);
     if (turn.silent || !t.trim()) return;
+    posted.push(t.trim());
     closeMessage();
     appendRow(botId, 'message', { type: 'message', role: 'assistant', text: t.trim(), streaming: false });
     db.prepare('UPDATE bots SET unread = unread + 1 WHERE id=?').run(botId);
+    notifyBot(botId, t.trim());
     wroteText = true;
   };
 
@@ -356,6 +382,22 @@ async function runTurn(botId: string, trigger: Trigger) {
     if (ctrl.signal.aborted) throw new Error('interrupted');
 
     let input = triggerText(trigger);
+    // Hermes keeps a conversation's system prompt fixed, so changed instructions or skills would only
+    // apply in a new chat. Tell the bot about the change in the message itself instead.
+    const skillRows = db.prepare('SELECT name, body FROM skills WHERE bot_id=? ORDER BY created_at').all(botId) as any[];
+    // The soul only counts once the user has written one (the default is already in the engine's prompt).
+    const soulText = bot.soul_custom ? readSoul(botId).text : '';
+    const sig = crypto.createHash('sha1').update(JSON.stringify(soulText ? [bot.instructions ?? '', skillRows, soulText] : [bot.instructions ?? '', skillRows])).digest('hex');
+    if (bot.instructions_sig && bot.instructions_sig !== sig) {
+      const skillsText = skillRows.map((r) => `### ${r.name}\n${r.body}`).join('\n\n');
+      input = `[Note from the app: your soul, instructions or skills were just changed. From now on follow these, replacing any earlier version.${soulText ? `\n## Soul (who you are)\n${soulText}` : ''}\n## Instructions\n${bot.instructions || '(none)'}${skillsText ? `\n## Skills\n${skillsText}` : ''}]\n\n${input}`;
+    }
+    if (bot.instructions_sig !== sig) db.prepare('UPDATE bots SET instructions_sig=? WHERE id=?').run(sig, botId);
+    // Something to hand over once: a merged chat's content, or what a heartbeat posted here.
+    if (!heartbeat) {
+      const note = takeChatNote(botId);
+      if (note) input = `[Note from the app: ${note}]\n\n${input}`;
+    }
     if (bot.handback_at) {
       input = `[Note: the user took control of your screen for a while and has just handed it back. Look at the screen before you rely on what was there.]\n\n${input}`;
       db.prepare('UPDATE bots SET handback_at=NULL WHERE id=?').run(botId);
@@ -371,7 +413,8 @@ async function runTurn(botId: string, trigger: Trigger) {
         input,
         instructions: await instructionsFor(userId, botId),
         // One engine-side thread per conversation; "New chat" bumps the generation and starts another.
-        conversation: `hq-${botId}-g${bot.generation}`,
+        // Heartbeats keep their own daily thread so check-ins don't fill up the chat's memory.
+        conversation: heartbeat ? `hq-${botId}-hb-${new Date().toISOString().slice(0, 10)}` : `hq-${botId}-g${bot.generation}`,
         stream: true,
         store: true,
         model_options: { reasoning_effort: bot.effort ?? 'medium' },
@@ -491,6 +534,17 @@ async function runTurn(botId: string, trigger: Trigger) {
       const row = getRow(botId, ref.seq);
       if (row?.body.type !== 'tool-call' || (row.body.status !== 'running' && row.body.status !== 'awaiting-approval')) continue;
       patchToolRow(botId, ref.seq, failed ? { status: 'error', summary: ctrl.signal.aborted ? 'Stopped' : 'Did not finish' } : { status: 'done' });
+    }
+    if (heartbeat) {
+      const said = turn.silent ? [] : posted;
+      if (!said.length) {
+        // Nothing for the user (or it failed): take its rows back out of the chat.
+        dropRowsFrom(botId, startSeq, startGen);
+        db.prepare('UPDATE bots SET heartbeat_last_note=? WHERE id=?').run(failed ? 'Check-in failed' : 'Nothing needed you', botId);
+      } else {
+        db.prepare('UPDATE bots SET heartbeat_last_note=? WHERE id=?').run(said.join(' ').slice(0, 140), botId);
+        addChatNote(botId, `Your heartbeat check-in posted this in the chat, so the user may reply to it:\n${said.join('\n\n')}`);
+      }
     }
     if (aborts.get(botId) === ctrl) aborts.delete(botId);
     if (turns.get(botId) === turn) turns.delete(botId);

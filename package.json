@@ -1,13 +1,14 @@
 {
-  "name": "grokbot",
+  "name": "botly",
   "private": true,
-  "description": "Bot HQ: a team of Hermes agents, each with its own screen on one Orgo computer, with Composio apps and xAI voice.",
+  "description": "Botly: a team of Hermes agents, each with its own screen on one Orgo computer, with Composio apps and xAI voice.",
   "workspaces": ["server", "web"],
   "scripts": {
     "dev": "npm run dev -w server & npm run dev -w web",
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "test:hardening": "npm run build -w server && node --test tests/hardening.test.mjs tests/tavily.test.mjs tests/video-preview.test.mjs && bash -n scripts/backup.sh && bash -n scripts/update.sh && bash -n scripts/migrate-to-botly.sh && bash tests/backup.test.sh"
   },
   "engines": { "node": ">=22" }
 }

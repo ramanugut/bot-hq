@@ -1,0 +1,59 @@
+{
+  "style": "playful",
+  "format": "portrait",
+  "brand": {
+    "name": "Mumatec Hosting",
+    "url": "mumatechosting.co.za",
+    "accent": "#FF3D7F",
+    "accent2": "#FFD23F",
+    "deep": "#111111"
+  },
+  "voice": "en-ZA-LeahNeural",
+  "captions": true,
+  "scenes": [
+    {
+      "type": "hero",
+      "kicker": "Black Friday",
+      "title": "Hosting *sale*",
+      "say": "Black Friday is here, and hosting just got cheaper."
+    },
+    {
+      "type": "prices",
+      "title": "Pick your *deal*",
+      "plans": [
+        {
+          "name": "Starter",
+          "price": "R59",
+          "per": "/mo",
+          "features": [
+            "15 GB"
+          ]
+        },
+        {
+          "name": "Business",
+          "price": "R79",
+          "per": "/mo",
+          "popular": true,
+          "features": [
+            "30 GB"
+          ]
+        },
+        {
+          "name": "Pro",
+          "price": "R120",
+          "per": "/mo",
+          "features": [
+            "60 GB"
+          ]
+        }
+      ],
+      "say": "Fifteen gigs for fifty-nine rand. Thirty for seventy-nine. Sixty for one-twenty."
+    },
+    {
+      "type": "cta",
+      "title": "Grab *yours*",
+      "button": "Order now",
+      "say": "Grab yours before Friday ends."
+    }
+  ]
+}

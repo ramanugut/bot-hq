@@ -1,6 +1,6 @@
 import { db, now } from './db.js';
 import { hub } from './lib/hub.js';
-import type { Bot, LiveState, Row, RowBody, RowKind, Routine, Task } from './types.js';
+import type { Bot, ChatInfo, LiveState, Row, RowBody, RowKind, Routine, Task } from './types.js';
 import { Cron } from 'croner';
 
 // ---------- bots ----------
@@ -13,7 +13,7 @@ export function toBot(r: any): Bot {
   if (last) {
     const b = JSON.parse(last.body) as RowBody;
     lastPreview =
-      b.type === 'message' ? b.text : b.type === 'card' ? (b.card === 'approval' ? `Waiting for you: ${b.title}` : b.card === 'question' ? b.question : b.card === 'connect' ? `Connect ${b.toolkitName}` : 'Draft') : b.type === 'event' ? b.text : null;
+      b.type === 'message' ? (b.text || (b.attachments?.length ? `📎 ${b.attachments.length === 1 ? b.attachments[0].name : `${b.attachments.length} attachments`}` : '')) : b.type === 'card' ? (b.card === 'approval' ? `Waiting for you: ${b.title}` : b.card === 'question' ? b.question : b.card === 'connect' ? `Connect ${b.toolkitName}` : 'Draft') : b.type === 'event' ? b.text : null;
   }
   return {
     id: r.id,
@@ -34,6 +34,11 @@ export function toBot(r: any): Bot {
     model: r.model ?? null,
     provider: r.provider ?? null,
     generation: r.generation,
+    heartbeatMin: r.heartbeat_min ?? 0,
+    heartbeatChecklist: r.heartbeat_checklist ?? '',
+    heartbeatQuiet: (r.heartbeat_quiet ?? 1) !== 0,
+    heartbeatLastAt: r.heartbeat_last_at ?? null,
+    heartbeatLastNote: r.heartbeat_last_note ?? null,
     unread: r.unread,
     lastPreview: lastPreview ? lastPreview.slice(0, 140) : null,
     lastActivityAt: last?.created_at ?? r.updated_at,
@@ -116,11 +121,191 @@ export function listRows(botId: string, opts: { beforeSeq?: number; limit?: numb
   return rows.reverse().map(toRow);
 }
 
+/** The next unused chat number for this bot (older chats keep theirs, so "+1" on the current one can clash). */
+function nextGeneration(botId: string, current: number): number {
+  const a = (db.prepare('SELECT MAX(generation) m FROM rows WHERE bot_id=?').get(botId) as any).m ?? 0;
+  const b = (db.prepare('SELECT MAX(generation) m FROM chats WHERE bot_id=?').get(botId) as any).m ?? 0;
+  return Math.max(current, a, b) + 1;
+}
+
+/** Point the bot at chat `generation` and tell the app to load it. */
+function openGeneration(botId: string, generation: number) {
+  const b = getBotRow(botId);
+  const max = (db.prepare('SELECT MAX(seq) m FROM rows WHERE bot_id=? AND generation=?').get(botId, generation) as any).m ?? 0;
+  db.prepare('UPDATE bots SET generation=?, next_seq=? WHERE id=?').run(generation, max + 1, botId);
+  db.prepare('DELETE FROM pending_turns WHERE bot_id=?').run(botId);
+  hub.emit(b.user_id, { type: 'cleared', botId, generation, reload: max > 0 });
+  hub.emit(b.user_id, { type: 'chats', botId });
+}
+
+/** Start a new, empty chat. An empty current chat is reused rather than piling up blank ones. */
 export function clearConversation(botId: string) {
   const b = getBotRow(botId);
-  db.prepare('UPDATE bots SET generation = generation + 1, next_seq = 1 WHERE id=?').run(botId);
-  db.prepare('DELETE FROM pending_turns WHERE bot_id=?').run(botId);
-  hub.emit(b.user_id, { type: 'cleared', botId, generation: b.generation + 1 });
+  const empty = !db.prepare('SELECT 1 FROM rows WHERE bot_id=? AND generation=? LIMIT 1').get(botId, b.generation);
+  if (empty) { hub.emit(b.user_id, { type: 'chats', botId }); return; }
+  openGeneration(botId, nextGeneration(botId, b.generation));
+}
+
+// ---------- chats ----------
+
+
+const rowText = (body: string): string | null => {
+  try {
+    const b = JSON.parse(body) as RowBody;
+    if (b.type === 'message') return b.text;
+    if (b.type === 'event') return b.text;
+  } catch { /* */ }
+  return null;
+};
+
+export function listChats(botId: string): ChatInfo[] {
+  const b = getBotRow(botId);
+  if (!b) return [];
+  const stats = db.prepare(`SELECT generation g, MIN(created_at) first, MAX(created_at) last,
+      SUM(CASE WHEN kind='message' THEN 1 ELSE 0 END) n FROM rows WHERE bot_id=? GROUP BY generation`).all(botId) as any[];
+  const meta = new Map((db.prepare('SELECT * FROM chats WHERE bot_id=?').all(botId) as any[]).map((r) => [r.generation, r]));
+  const gens = new Map<number, { first: number; last: number; n: number }>();
+  for (const s of stats) gens.set(s.g, { first: s.first, last: s.last, n: s.n });
+  if (!gens.has(b.generation)) gens.set(b.generation, { first: now(), last: now(), n: 0 });
+  const firstUser = db.prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND kind='message' AND json_extract(body,'$.role')='user' ORDER BY seq LIMIT 1");
+  const lastMsg = db.prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND kind IN ('message','event') ORDER BY seq DESC LIMIT 1");
+  const out: ChatInfo[] = [];
+  for (const [g, st] of gens) {
+    const m = meta.get(g);
+    const first = firstUser.get(botId, g) as any;
+    const last = lastMsg.get(botId, g) as any;
+    const auto = first ? (rowText(first.body) ?? '').replace(/\s+/g, ' ').trim() : '';
+    out.push({
+      generation: g,
+      title: m?.title || (auto ? (auto.length > 60 ? `${auto.slice(0, 57).trimEnd()}…` : auto) : st.n ? 'Chat' : 'New chat'),
+      preview: last ? (rowText(last.body) ?? '').replace(/\s+/g, ' ').slice(0, 120) || null : null,
+      messages: st.n,
+      archived: !!m?.archived,
+      current: g === b.generation,
+      createdAt: m?.created_at ?? st.first,
+      updatedAt: st.last,
+    });
+  }
+  return out.sort((x, y) => y.updatedAt - x.updatedAt);
+}
+
+const chatExists = (botId: string, g: number) =>
+  !!db.prepare('SELECT 1 FROM rows WHERE bot_id=? AND generation=? LIMIT 1').get(botId, g) || getBotRow(botId)?.generation === g;
+
+function upsertChat(botId: string, g: number, patch: { title?: string | null; archived?: boolean; note?: string | null }) {
+  db.prepare('INSERT OR IGNORE INTO chats(bot_id,generation,created_at) VALUES (?,?,?)').run(botId, g, now());
+  if (patch.title !== undefined) db.prepare('UPDATE chats SET title=? WHERE bot_id=? AND generation=?').run(patch.title, botId, g);
+  if (patch.archived !== undefined) db.prepare('UPDATE chats SET archived=? WHERE bot_id=? AND generation=?').run(patch.archived ? 1 : 0, botId, g);
+  if (patch.note !== undefined) db.prepare('UPDATE chats SET note=? WHERE bot_id=? AND generation=?').run(patch.note, botId, g);
+}
+
+export function openChat(botId: string, g: number) {
+  if (!chatExists(botId, g)) throw new Error('That chat no longer exists.');
+  upsertChat(botId, g, { archived: false });
+  if (getBotRow(botId).generation !== g) openGeneration(botId, g);
+  else hub.emit(getBotRow(botId).user_id, { type: 'chats', botId });
+}
+
+export function renameChat(botId: string, g: number, title: string) {
+  if (!chatExists(botId, g)) throw new Error('That chat no longer exists.');
+  upsertChat(botId, g, { title: title.trim().slice(0, 80) || null });
+  hub.emit(getBotRow(botId).user_id, { type: 'chats', botId });
+}
+
+/** Archive or bring back a chat. Archiving the open chat moves the bot to a new one. */
+export function archiveChat(botId: string, g: number, archived: boolean) {
+  if (!chatExists(botId, g)) throw new Error('That chat no longer exists.');
+  upsertChat(botId, g, { archived });
+  const b = getBotRow(botId);
+  if (archived && b.generation === g) openGeneration(botId, nextGeneration(botId, g));
+  else hub.emit(b.user_id, { type: 'chats', botId });
+}
+
+/** Delete a chat for good. Deleting the open chat moves the bot to the newest other chat (or a new one). */
+export function deleteChat(botId: string, g: number) {
+  const b = getBotRow(botId);
+  db.transaction(() => {
+    db.prepare('DELETE FROM rows WHERE bot_id=? AND generation=?').run(botId, g);
+    db.prepare('DELETE FROM llm_items WHERE bot_id=? AND generation=?').run(botId, g);
+    db.prepare('DELETE FROM chats WHERE bot_id=? AND generation=?').run(botId, g);
+  })();
+  if (b.generation === g) {
+    const next = db.prepare(`SELECT r.generation g FROM rows r LEFT JOIN chats c ON c.bot_id=r.bot_id AND c.generation=r.generation
+      WHERE r.bot_id=? AND COALESCE(c.archived,0)=0 GROUP BY r.generation ORDER BY MAX(r.created_at) DESC LIMIT 1`).get(botId) as any;
+    openGeneration(botId, next ? next.g : nextGeneration(botId, g));
+  } else hub.emit(b.user_id, { type: 'chats', botId });
+}
+
+/** A plain-text copy of a chat, for handing its content to the bot (merges) or to a person. */
+export function chatTranscript(botId: string, g: number, maxChars = 12_000): string {
+  const rows = db.prepare("SELECT body FROM rows WHERE bot_id=? AND generation=? AND kind='message' ORDER BY seq").all(botId, g) as any[];
+  const lines = rows.map((r) => {
+    const b = JSON.parse(r.body);
+    const who = b.role === 'user' ? (b.from?.name ?? 'User') : 'You';
+    return `${who}: ${String(b.text ?? '').trim()}`;
+  }).filter((l) => !/:\s*$/.test(l));
+  let text = lines.join('\n\n');
+  if (text.length > maxChars) text = `…${text.slice(text.length - maxChars)}`;
+  return text;
+}
+
+/**
+ * Merge chat `from` into chat `into`: its messages are added at the end of `into` (oldest first),
+ * `from` is removed, and the bot is told what was merged on its next turn in `into`.
+ */
+export function mergeChats(botId: string, from: number, into: number) {
+  if (from === into) throw new Error('Pick two different chats.');
+  if (!chatExists(botId, from) || !chatExists(botId, into)) throw new Error('That chat no longer exists.');
+  const b = getBotRow(botId);
+  const titleOf = (g: number) => listChats(botId).find((c) => c.generation === g)?.title ?? 'another chat';
+  const fromTitle = titleOf(from);
+  const transcript = chatTranscript(botId, from);
+  db.transaction(() => {
+    let seq = ((db.prepare('SELECT MAX(seq) m FROM rows WHERE bot_id=? AND generation=?').get(botId, into) as any).m ?? 0) + 1;
+    const rev = bumpRev(botId);
+    const ins = db.prepare('INSERT INTO rows(bot_id,generation,seq,updated_seq,kind,body,created_at) VALUES (?,?,?,?,?,?,?)');
+    ins.run(botId, into, seq++, rev, 'event', JSON.stringify({ type: 'event', event: 'chat-merged', text: `Merged in: ${fromTitle}` }), now());
+    const moved = db.prepare('SELECT kind, body, created_at FROM rows WHERE bot_id=? AND generation=? ORDER BY seq').all(botId, from) as any[];
+    for (const r of moved) {
+      const body = JSON.parse(r.body);
+      // Cards from the old chat can't be answered any more: keep the text, not the buttons.
+      if (r.kind === 'card' || r.kind === 'tool-call') continue;
+      if (body.type === 'message') body.streaming = false;
+      ins.run(botId, into, seq++, rev, r.kind, JSON.stringify(body), r.created_at);
+    }
+    db.prepare('DELETE FROM rows WHERE bot_id=? AND generation=?').run(botId, from);
+    db.prepare('DELETE FROM llm_items WHERE bot_id=? AND generation=?').run(botId, from);
+    db.prepare('DELETE FROM chats WHERE bot_id=? AND generation=?').run(botId, from);
+    const prev = (db.prepare('SELECT note FROM chats WHERE bot_id=? AND generation=?').get(botId, into) as any)?.note;
+    const note = transcript ? `The user merged another chat ("${fromTitle}") into this one. Treat it as part of this conversation:\n${transcript}` : null;
+    if (note) upsertChat(botId, into, { note: prev ? `${prev}\n\n${note}` : note });
+    if (b.generation === into) db.prepare('UPDATE bots SET next_seq=? WHERE id=?').run(seq, botId);
+  })();
+  if (b.generation === from || b.generation === into) openGeneration(botId, into);
+  else hub.emit(b.user_id, { type: 'chats', botId });
+}
+
+/** Something the bot should be told once, at the start of its next turn in the open chat. */
+export function takeChatNote(botId: string): string | null {
+  const b = getBotRow(botId);
+  const r = db.prepare('SELECT note FROM chats WHERE bot_id=? AND generation=?').get(botId, b.generation) as any;
+  if (!r?.note) return null;
+  db.prepare('UPDATE chats SET note=NULL WHERE bot_id=? AND generation=?').run(botId, b.generation);
+  return r.note;
+}
+
+export function addChatNote(botId: string, note: string) {
+  const b = getBotRow(botId);
+  const prev = (db.prepare('SELECT note FROM chats WHERE bot_id=? AND generation=?').get(botId, b.generation) as any)?.note;
+  upsertChat(botId, b.generation, { note: prev ? `${prev}\n\n${note}` : note });
+}
+
+/** Take a quiet heartbeat's own rows back out of chat `generation` (the user's messages stay). */
+export function dropRowsFrom(botId: string, fromSeq: number, generation: number) {
+  const b = getBotRow(botId);
+  db.prepare(`DELETE FROM rows WHERE bot_id=? AND generation=? AND seq>=?
+    AND NOT (kind='message' AND json_extract(body,'$.role')='user')`).run(botId, generation, fromSeq);
+  if (b.generation === generation) hub.emit(b.user_id, { type: 'cleared', botId, generation, reload: true });
 }
 
 // ---------- LLM history (Responses API input items) ----------
@@ -157,7 +342,8 @@ export const allLive = (userId: string) => listBots(userId).map((b) => getLive(b
 
 // ---------- routines / tasks ----------
 
-export function describeCron(expr: string): string {
+export function describeCron(expr: string, tz = 'UTC'): string {
+  if (isOnceSchedule(expr)) { let z = tz; try { new Intl.DateTimeFormat('en', { timeZone: z }); } catch { z = 'UTC'; } return `Once, ${new Date(expr).toLocaleString('en-ZA', { dateStyle: 'medium', timeStyle: 'short', timeZone: z })}`; }
   const p = expr.trim().split(/\s+/);
   if (p.length !== 5) return expr;
   const [m, h, dom, mon, dow] = p;
@@ -184,7 +370,7 @@ export function toRoutine(r: any): Routine {
   } catch { /* invalid cron */ }
   return {
     id: r.id, botId: r.bot_id, name: r.name, prompt: r.prompt, schedule: r.schedule, timezone: r.timezone,
-    enabled: !!r.enabled, nextRunAt, lastRunAt: r.last_run_at, description: r.schedule.startsWith('event:') ? describeEventSlug(r.schedule) : describeCron(r.schedule),
+    enabled: !!r.enabled, nextRunAt, lastRunAt: r.last_run_at, description: r.schedule.startsWith('event:') ? describeEventSlug(r.schedule) : describeCron(r.schedule, r.timezone),
   };
 }
 
@@ -192,3 +378,14 @@ export const listRoutines = (botId: string) => (db.prepare('SELECT * FROM routin
 
 export const toTask = (r: any): Task => ({ id: r.id, botId: r.bot_id, title: r.title, state: r.state, note: r.note, updatedAt: r.updated_at });
 export const listTasks = (botId: string) => (db.prepare('SELECT * FROM tasks WHERE bot_id=? ORDER BY updated_at DESC').all(botId) as any[]).map(toTask);
+
+/** A one-off schedule is an ISO date-time with an offset, e.g. 2026-11-16T17:00:00+02:00. */
+export function isOnceSchedule(expr: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(expr.trim()) && !Number.isNaN(Date.parse(expr));
+}
+
+/** The user's time zone (from their browser), or the server's default. */
+export function userTimezone(userId: string): string {
+  const r = db.prepare('SELECT timezone FROM users WHERE id=?').get(userId) as any;
+  return r?.timezone || (process.env.BOTLY_TIMEZONE ?? process.env.HQ_TIMEZONE) || 'UTC';
+}

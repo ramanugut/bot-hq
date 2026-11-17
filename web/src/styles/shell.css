@@ -67,3 +67,30 @@
   color: var(--color-text-secondary); font-size: 14px; font-weight: 500; letter-spacing: -0.35px; line-height: 14px;
 }
 .account__name { font-size: 14px; font-weight: 500; line-height: 20px; letter-spacing: 0.14px; color: var(--color-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- phones: one pane at a time; bots list and details slide over the chat ---------- */
+.chat__menu-btn, .drawer-scrim { display: none; }
+@media (max-width: 760px) {
+  html, body, #root { height: 100dvh; }
+  .app { position: relative; }
+  .traffic-lights, .signin__chrome { display: none; }
+  .app .chat { min-width: 0; width: 100%; }
+  .transcript__col, .card { max-width: 100%; min-width: 0; box-sizing: border-box; }
+  .chat__menu-btn { display: inline-flex; position: absolute; left: 10px; top: 12px; }
+  .chat__pill-anchor { max-width: calc(100% - 120px); }
+  .chat__header-right { right: 10px; }
+
+  .sidebar, .sidebar.is-collapsed {
+    position: fixed; z-index: 40; left: 0; top: 0; bottom: 0; width: min(320px, 86vw);
+    transform: translateX(0); transition: transform 0.22s var(--ease-out);
+    box-shadow: 0 0 40px #0006; padding-top: env(safe-area-inset-top);
+  }
+  .sidebar.is-collapsed { transform: translateX(-105%); box-shadow: none; }
+  .drawer-scrim { display: block; position: fixed; inset: 0; z-index: 35; background: #0007; animation: fadeIn 160ms var(--ease-out); }
+
+  .app .details { position: fixed; z-index: 45; inset: 0; width: 100%; border-left: 0; padding-top: env(safe-area-inset-top); }
+  .composer-area { padding: 0 8px calc(8px + env(safe-area-inset-bottom)); }
+  input, textarea, select { font-size: 16px !important; } /* stops iPhone zooming into fields */
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.app-notice { position: fixed; z-index: 60; left: 50%; bottom: calc(84px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: min(92vw, 460px); padding: 10px 14px; border-radius: 14px; background: var(--color-ink, #1C1C1C); color: var(--color-bg-pane, #fff); font-size: 13px; line-height: 18px; box-shadow: 0 8px 30px #0004; }

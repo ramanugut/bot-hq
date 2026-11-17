@@ -1,0 +1,32 @@
+name: Botly code checks
+
+on:
+  push:
+    branches: [free-edition]
+  pull_request:
+    branches: [free-edition]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: botly-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run build
+      - run: node --test tests/hardening.test.mjs tests/tavily.test.mjs tests/video-preview.test.mjs
+      - run: bash -n scripts/backup.sh scripts/update.sh
+      - run: bash tests/backup.test.sh

@@ -1,22 +1,42 @@
 import { useEffect, useRef, useState } from 'react';
+import { BotAvatar } from '../avatar/BotAvatar';
 import type { Bot, LiveState, Row } from '@shared/types';
-import { BotAvatarFor } from '../avatar/BotAvatar';
-import { activityPhrase, activityStatus, isWaitingForYou } from '../lib/phrases';
+import { activityStatus, isWaitingForYou, repeatsStatus } from '../lib/phrases';
 import { duration } from '../lib/time';
 
-const CAPTION_FADE_MS = 320;
+type SignalMode = 'think' | 'search' | 'read' | 'browse' | 'write' | 'code' | 'create' | 'connect' | 'wait' | 'work';
+const CAPTION_FADE_MS = 280;
 
-/** A small glowing bulb that sits beside the mascot while the bot is thinking. */
-function IdeaBulb() {
+/** Each mode is tied to real Hermes activity or a running tool, not a random animation. */
+export function activitySignalMode(live: LiveState, rows: Row[]): SignalMode {
+  if (isWaitingForYou(live)) return 'wait';
+  const running = [...rows].reverse().find((r) => r.body.type === 'tool-call' && r.body.status === 'running');
+  const tool = running?.body.type === 'tool-call' ? running.body.name.toLowerCase() : '';
+  const kind = live.activity?.kind;
+  if (kind === 'searching_web' || /(?:tavily_search|free_search|x_search|web_search)/.test(tool)) return 'search';
+  if (kind === 'reading_web' || /(?:tavily_extract|tavily_crawl|tavily_map|read_document|read_file)/.test(tool)) return 'read';
+  if (kind === 'browsing_web' || kind === 'on_its_computer' || /(?:browser|computer|screenshot|navigate)/.test(tool)) return 'browse';
+  if (kind === 'running_commands' || kind === 'waiting_on_command' || /(?:terminal|shell|bash|exec_command)/.test(tool)) return 'code';
+  if (kind === 'drafting_file' || /(?:save_file|write_file|edit_file)/.test(tool)) return 'write';
+  if (/(?:image_gen|generate_image|make_promo_video|render_video)/.test(tool)) return 'create';
+  if (kind === 'messaging_named' || kind === 'connecting_service' || /(?:send_to_bot|connect_app)/.test(tool)) return 'connect';
+  if (kind === 'thinking' || kind === 'remembering') return 'think';
+  return 'work';
+}
+
+/** The bot itself, bouncing while it works, with a little thought bubble: soft dots, or a "?" when it waits for you. */
+function Puff({ bot, waiting }: { bot: Bot; waiting: boolean }) {
   return (
-    <svg className="thinking__idea" width="16" height="16" viewBox="0 0 24 24" aria-hidden>
-      <path className="thinking__idea-glass" d="M12 2.5a6.6 6.6 0 0 0-4.1 11.8c.7.55 1.1 1.3 1.1 2.1v.6h6v-.6c0-.8.4-1.55 1.1-2.1A6.6 6.6 0 0 0 12 2.5Z" />
-      <path className="thinking__idea-base" d="M9.6 18.4h4.8a.8.8 0 0 1 0 1.6H9.6a.8.8 0 0 1 0-1.6Zm.9 2.5h3a.8.8 0 0 1 0 1.6h-3a.8.8 0 0 1 0-1.6Z" />
-    </svg>
+    <span className={`thinking__puff${waiting ? ' is-waiting' : ''}`} aria-hidden="true">
+      <BotAvatar shape={bot.avatarShape} color={bot.avatarColor} size={40} title={bot.name} working={!waiting} />
+      <span className="thinking__bubble">
+        {waiting ? <span className="thinking__ask">?</span> : <><i /><i /><i /></>}
+      </span>
+    </span>
   );
 }
 
-/** One line of live reasoning. When the text changes, the old line fades out under the new one. */
+/** Keeps changing captions legible without shifting the chat layout. */
 function Caption({ text }: { text: string }) {
   const last = useRef(text);
   const [leaving, setLeaving] = useState<string | null>(null);
@@ -31,7 +51,7 @@ function Caption({ text }: { text: string }) {
   return (
     <span className="thinking__caption">
       <span key={text} className="thinking__caption-line is-in">{text}</span>
-      {leaving !== null && leaving !== text && <span key={`out:${leaving}`} className="thinking__caption-line is-out" aria-hidden>{leaving}</span>}
+      {leaving !== null && leaving !== text && <span key={`out:${leaving}`} className="thinking__caption-line is-out" aria-hidden="true">{leaving}</span>}
     </span>
   );
 }
@@ -40,15 +60,11 @@ interface Props {
   bot: Bot;
   live: LiveState;
   rows: Row[];
-  /** Step count to show beside the timer. Leave out when a steps chip above already shows it. */
+  /** Step count beside the timer. Omitted when the steps chip above already shows it. */
   steps?: number;
 }
 
-/**
- * The live status block at the end of the transcript while a turn runs: the bot's mascot sitting on a
- * dark pill with its name and a pulsing status word, a one-line caption of what it is doing, and a
- * running timer. When the bot is waiting for the person, the pill reads "Needs you" and stops pulsing.
- */
+/** A live, context-aware activity signal. No floating box, mascot badge or fake progress. */
 export function ThinkingBlock({ bot, live, rows, steps = 0 }: Props) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -57,28 +73,26 @@ export function ThinkingBlock({ bot, live, rows, steps = 0 }: Props) {
   }, []);
 
   const waiting = isWaitingForYou(live);
+  const mode = activitySignalMode(live, rows);
   const status = activityStatus(live, rows);
   const since = live.startedAt ?? live.activity?.since ?? live.awaiting?.since ?? now;
-  const tick = Math.floor((now - (live.activity?.since ?? since)) / 6000);
-  const caption = waiting
-    ? live.awaiting?.reason || 'Waiting for your answer'
-    : live.caption?.trim() || activityPhrase(live, rows, tick);
-  const timer = waiting
-    ? live.awaiting && now - live.awaiting.since >= 1000 ? `Waiting for ${duration(now - live.awaiting.since)}` : null
-    : now - since >= 1000 ? `Working for ${duration(now - since)}` : null;
+  // The status beside the name already says what is happening; a caption only adds what the bot is actually
+  // thinking or why it waits, never the same idea in other words.
+  const raw = waiting ? live.awaiting?.reason?.trim() : live.caption?.trim();
+  const caption = raw && !repeatsStatus(raw, status) ? raw : null;
+  const from = waiting && live.awaiting ? live.awaiting.since : since;
+  const timer = now - from >= 1000 ? duration(now - from) : null;
 
   return (
-    <div className={`thinking${waiting ? ' is-waiting' : ''}`}>
-      <div className="thinking__badge">
-        <span className="thinking__mascot"><BotAvatarFor bot={bot} size={36} /></span>
-        {waiting ? <span className="thinking__alert" aria-hidden /> : <IdeaBulb />}
-        <div className="thinking__pill" role="status" aria-live="polite">
+    <div className={`thinking thinking--signal is-${mode}`}>
+      <Puff bot={bot} waiting={waiting} />
+      <div className="thinking__content">
+        <div className="thinking__heading">
           <span className="thinking__name">{bot.name}</span>
-          <span className="thinking__status" key={status}>{status}</span>
+          <span className="thinking__separator" aria-hidden="true" />
+          <span className="thinking__status" role="status" aria-live="polite">{status}</span>
         </div>
-      </div>
-      <div className="thinking__side">
-        <Caption text={caption} />
+        {caption && <Caption text={caption} />}
         {(timer || steps > 0) && (
           <span className="thinking__meta">
             {timer}
@@ -91,5 +105,4 @@ export function ThinkingBlock({ bot, live, rows, steps = 0 }: Props) {
   );
 }
 
-/** Kept for existing importers: the activity line is now the thinking block. */
 export const ActivityLine = ThinkingBlock;

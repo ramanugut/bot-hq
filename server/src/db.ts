@@ -143,6 +143,10 @@ function addColumn(table: string, col: string, ddl: string) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${ddl}`);
 }
+addColumn('users', 'password_hash', 'TEXT');
+addColumn('users', 'timezone', 'TEXT');
+// What the bot's engine conversation last saw of its instructions and skills (see loop.ts).
+addColumn('bots', 'instructions_sig', 'TEXT');
 addColumn('bots', 'voice', "TEXT NOT NULL DEFAULT 'luna'");
 addColumn('bots', 'voice_speed', 'REAL NOT NULL DEFAULT 1');
 addColumn('bots', 'voice_language', "TEXT NOT NULL DEFAULT 'auto'");
@@ -155,5 +159,30 @@ addColumn('bots', 'engine_port', 'INTEGER');
 addColumn('bots', 'handback_at', 'INTEGER');
 addColumn('screens', 'width', 'INTEGER');
 addColumn('screens', 'height', 'INTEGER');
+// A sleeping screen: its browser and display are stopped to save memory; work wakes it again.
+addColumn('screens', 'asleep', 'INTEGER NOT NULL DEFAULT 0');
+// Heartbeat: the bot checks its checklist every N minutes (0 = off) and only speaks when something needs the user.
+addColumn('bots', 'heartbeat_min', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('bots', 'heartbeat_checklist', "TEXT NOT NULL DEFAULT ''");
+addColumn('bots', 'heartbeat_quiet', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('bots', 'heartbeat_last_at', 'INTEGER');
+addColumn('bots', 'heartbeat_last_note', 'TEXT');
+// The user edited the bot's SOUL.md: renames no longer rewrite it.
+addColumn('bots', 'soul_custom', 'INTEGER NOT NULL DEFAULT 0');
+
+// Chats: every "generation" of a bot's conversation is one chat. This table only holds what the
+// rows can't tell: a title, whether it is archived, and a note to hand the bot on its next turn.
+db.exec(`CREATE TABLE IF NOT EXISTS chats (
+  bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE,
+  generation INTEGER NOT NULL,
+  title TEXT,
+  archived INTEGER NOT NULL DEFAULT 0,
+  note TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (bot_id, generation)
+)`);
+
+// The main bot used to be called "Doug" out of the box; it is "Marvelous" now. A bot the user renamed is left alone.
+db.prepare("UPDATE bots SET name='Marvelous' WHERE is_primary=1 AND name='Doug'").run();
 
 export const now = () => Date.now();
