@@ -216,7 +216,61 @@
   .cfg-nav, .app-settings__nav { flex-direction: row; width: auto; overflow-x: auto; padding: 8px; gap: 4px; border-right: 0; border-bottom: 0.5px solid var(--color-border-tertiary); flex-shrink: 0; scrollbar-width: none; }
   .cfg-nav__item { width: auto; white-space: nowrap; flex-shrink: 0; }
   .cfg-page { padding: 16px; }
+  /* App settings: the page used to stay side by side with the section list, leaving the page no width */
+  .app-settings { flex-direction: column; }
+  .app-settings__nav { align-items: center; padding-right: 56px; }
+  .app-settings__back { margin-bottom: 0; flex-shrink: 0; }
+  .app-settings__heading { display: none; }
+  .app-settings__main { flex: 1 1 auto; min-height: 0; }
+  .app-settings__page { padding: 20px 16px 48px; gap: 22px; }
+  .app-settings__close { position: fixed; top: 8px; right: 8px; z-index: 1; }
 }
 
 /* knob contrasts with the "on" track (matters for black bots in dark mode) */
 .toggle.is-on .toggle__knob { background: var(--bot-on-action, #FFFFFF); }
+
+/* ---------- Settings → Connectors ---------- */
+.conn-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
+.conn-list { display: flex; flex-direction: column; gap: 10px; }
+.conn-card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: var(--color-bg-pane); border: 0.5px solid var(--color-border-tertiary); }
+.conn-card.is-off .conn-card__top { opacity: 0.6; }
+.conn-card__top { display: flex; align-items: flex-start; gap: 12px; }
+.conn-card__top .toggle { margin-top: 4px; flex-shrink: 0; }
+.conn-card__title { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--color-text-primary); }
+.conn-card__url { margin-top: 2px; overflow-wrap: anywhere; }
+.conn-card__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.conn-card__spacer { flex: 1 1 auto; }
+.conn-card__when { font-size: 12px; line-height: 16px; color: var(--color-text-tertiary); }
+.conn-tile {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 36px; height: 36px; border-radius: 9px;
+  font-size: 13px; font-weight: 650; letter-spacing: 0.3px; color: var(--color-text-primary);
+  background: var(--color-bg-tertiary); box-shadow: inset 0 0 0 0.5px var(--color-border-secondary);
+}
+.conn-tile--small { width: 24px; height: 24px; border-radius: 6px; font-size: 10px; }
+.conn-chip { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: var(--radius-full); font-size: 11px; font-weight: 500; line-height: 14px; white-space: nowrap; }
+.conn-chip--ok { color: var(--color-success-text); background: var(--color-success-bg); }
+.conn-chip--bad { color: var(--color-danger-text); background: var(--color-danger-bg); }
+.conn-tools {
+  display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; margin: 0; padding: 8px 10px 8px 26px;
+  border-radius: 8px; background: var(--color-bg-subtle); font-size: 12px; line-height: 18px; color: var(--color-text-secondary); scrollbar-width: thin;
+}
+.conn-tools code { font-family: var(--font-mono-stack); font-size: 12px; color: var(--color-text-primary); }
+.conn-note { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; font-size: 13px; line-height: 19px; color: var(--color-success-text); background: var(--color-success-bg); }
+.conn-note.is-bad { color: var(--color-danger-text); background: var(--color-danger-bg); }
+.conn-note__sub { margin-top: 2px; color: var(--color-text-secondary); }
+.conn-editor { gap: 14px; padding: 16px; }
+.conn-editor__title { font-size: 15px; line-height: 22px; font-weight: 600; }
+.conn-editor__grid { align-items: start; }
+.conn-editor__foot { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding-top: 2px; }
+.conn-bots { display: flex; flex-wrap: wrap; gap: 8px; }
+.conn-bot {
+  display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px 0 8px; border-radius: var(--radius-full); cursor: pointer;
+  font-size: 13px; color: var(--color-text-primary); background: var(--color-bg-tertiary); box-shadow: inset 0 0 0 0.5px var(--color-border-secondary);
+}
+.conn-bot input { width: 16px; height: 16px; margin: 0; accent-color: var(--color-primary); }
+.conn-bot.is-on { background: var(--color-bg-active); box-shadow: inset 0 0 0 1px var(--color-border-primary, var(--color-border-secondary)); }
+.conn-test { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--color-success-text); padding: 8px 10px; border-radius: 8px; background: var(--color-success-bg); }
+@media (max-width: 760px) {
+  .conn-editor__grid { grid-template-columns: 1fr; }
+  .conn-card__when { width: 100%; order: 10; }
+}

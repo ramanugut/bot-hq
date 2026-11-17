@@ -22,6 +22,8 @@ import { configApi } from './routes-config.js';
 import { startIdleWatcher } from './idle.js';
 import { mcpApi } from './mcp.js';
 import { initEngines } from './engine.js';
+import { connectorsApi } from './routes-connectors.js';
+import { initConnectors } from './connections-apply.js';
 
 if (!desSelfTest()) throw new Error('DES self-test failed');
 initSubagents();
@@ -35,6 +37,7 @@ app.get('/api/health', (c) => c.json({ ok: true, engine: 'hermes' }));
 app.route('/mcp', mcpApi);
 app.route('/api/checkins', checkinsApi);
 app.route('/api/rooms', roomsApi);
+app.route('/api', connectorsApi);
 app.route('/api', api);
 app.route('/api', configApi);
 
@@ -64,3 +67,4 @@ if ((process.env.BOTLY_NO_SCHEDULER ?? process.env.GROKBOT_NO_SCHEDULER) !== '1'
 startIdleWatcher();
 startScreenSleeper(isBotBusy);
 initEngines();
+initConnectors();

@@ -63,6 +63,11 @@ export const env = {
   mcpBaseUrl: (process.env.MCP_BASE_URL ?? `http://127.0.0.1:${process.env.PORT ?? 8787}`).replace(/\/+$/, ''),
   /** Extra MCP servers every managed bot gets, as a JSON object of Hermes `mcp_servers` entries (e.g. X's XMCP). */
   extraMcpServers: process.env.EXTRA_MCP_SERVERS ?? '',
+  /**
+   * Supervisor program that runs the primary agent's gateway. Restarted (only) when a connector the
+   * primary bot uses is added, changed or removed in Settings → Connectors. Empty = never restart it.
+   */
+  primaryHermesProgram: process.env.BOTLY_HERMES_PROGRAM ?? 'botly-hermes',
   primaryBotName: process.env.PRIMARY_BOT_NAME ?? 'Marvelous',
   primaryBotLabel: process.env.PRIMARY_BOT_LABEL ?? 'Chief of Staff',
 

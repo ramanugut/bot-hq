@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Easier: Settings → Connectors in the app does this without a terminal, and lets you pick which bots get it.
+# Servers added here show up there too (after the restart below), for all bots.
+#
 # Give your bots an MCP server's tools (for example your Mumatec WHMCS tools). Run as root:
 #   bash /opt/botly/app/scripts/add-mcp.sh whmcs https://your-server/mcp
 # It asks for an access token (optional, hidden as you paste). The main bot gets it straight away;

@@ -1,4 +1,4 @@
-import type { Bot, ComputerState, EngineInfo, LibraryFile, Memory, Routine, Skill, Task, Toolkit } from '@shared/types';
+import type { Bot, ComputerState, ConnectorApply, ConnectorTool, ConnectorView, EngineInfo, LibraryFile, Memory, Routine, Skill, Task, Toolkit } from '@shared/types';
 import { ApiError } from './api';
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -34,7 +34,18 @@ export interface ComputerDetails {
 
 export type BotPatch = Partial<Pick<Bot, 'name' | 'label' | 'description' | 'instructions' | 'avatarShape' | 'avatarColor' | 'effort' | 'mode' | 'heartbeatMin' | 'heartbeatChecklist' | 'heartbeatQuiet'>>;
 
+export type ConnectorAuth = { type: 'none' } | { type: 'bearer'; value?: string } | { type: 'header'; header: string; value?: string };
+export interface ConnectorForm { label?: string; url?: string; auth?: ConnectorAuth; scope?: 'all' | 'some'; botIds?: string[]; enabled?: boolean }
+export interface ConnectorsListing { connectors: ConnectorView[]; bots: { id: string; name: string; isPrimary: boolean }[]; canEdit: boolean }
+
 export const configApi = {
+  connectors: () => req<ConnectorsListing>('GET', '/connectors'),
+  addConnector: (f: ConnectorForm) => req<{ connector: ConnectorView; applied: ConnectorApply[] }>('POST', '/connectors', f),
+  updateConnector: (id: string, f: ConnectorForm) => req<{ connector: ConnectorView; applied: ConnectorApply[] }>('PATCH', `/connectors/${id}`, f),
+  deleteConnector: (id: string) => req<{ ok: true; applied: ConnectorApply[] }>('DELETE', `/connectors/${id}`),
+  testConnector: (id: string) => req<{ connector: ConnectorView }>('POST', `/connectors/${id}/test`),
+  tryConnector: (f: ConnectorForm & { id?: string }) => req<{ ok: boolean; error: string | null; tools: ConnectorTool[]; serverName: string | null }>('POST', '/connectors/test', f),
+
   settings: (botId: string) => req<BotSettingsBundle>('GET', `/bots/${botId}/settings`),
   updateBot: (botId: string, p: BotPatch) => req<{ bot: Bot }>('PATCH', `/bots/${botId}`, p),
   soul: (botId: string) => req<{ text: string; custom: boolean; suggested: string }>('GET', `/bots/${botId}/soul`),

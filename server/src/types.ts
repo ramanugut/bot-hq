@@ -269,3 +269,28 @@ export type ServerEvent =
   | { type: 'memories'; botId: string }
   | { type: 'connections' }
   | { type: 'ping' };
+
+// ---------- connectors (outside MCP servers, Settings → Connectors) ----------
+
+export interface ConnectorTool { name: string; description: string }
+
+export interface ConnectorView {
+  id: string;
+  /** Key in Hermes' mcp_servers; the bot sees tools as mcp_<name>_<tool>. */
+  name: string;
+  label: string;
+  /** The address with any long secret part shortened. The full address never leaves the server. */
+  url: string;
+  auth: 'none' | 'bearer' | 'header';
+  authHeader: string | null;
+  /** "••••abcd", or null without a key. */
+  secretHint: string | null;
+  scope: 'all' | 'some';
+  botIds: string[];
+  enabled: boolean;
+  status: { at: number; ok: boolean; error: string | null; toolCount: number } | null;
+  tools: ConnectorTool[];
+}
+
+/** What happened to each bot after a connector change. */
+export interface ConnectorApply { botId: string; name: string; result: 'restarted' | 'waiting' | 'error' | 'manual'; message?: string }

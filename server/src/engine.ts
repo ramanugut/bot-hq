@@ -6,6 +6,7 @@ import YAML from 'yaml';
 import { displayFor } from './box.js';
 import { cdpUrlFor, screenFor } from './computer.js';
 import { db } from './db.js';
+import { connectorEntriesFor, managedConnectorNames } from './connections.js';
 import { env } from './env.js';
 import type { EngineInfo, EngineProvider } from './types.js';
 
@@ -161,17 +162,6 @@ export function writeSoul(botId: string, text: string | null) {
   db.prepare('UPDATE bots SET soul_custom=? WHERE id=?').run(text === null ? 0 : 1, botId);
 }
 
-function extraMcpServers(): Record<string, any> {
-  if (!env.extraMcpServers) return {};
-  try {
-    const v = JSON.parse(env.extraMcpServers);
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  } catch {
-    console.warn('[engine] EXTRA_MCP_SERVERS is not valid JSON; ignored');
-    return {};
-  }
-}
-
 /** Create or refresh the home. config.yaml is created once; after that only the keys we own are patched. */
 async function writeHome(botId: string): Promise<{ home: string; key: string; display: string | null }> {
   const b = botRow(botId);
@@ -212,9 +202,11 @@ async function writeHome(botId: string): Promise<{ home: string; key: string; di
   if (cdp) cfg.browser = { ...(cfg.browser ?? {}), cdp_url: cdp };
   const existingMcp = { ...(cfg.mcp_servers ?? {}) };
   if (String(existingMcp.hq?.url ?? '').endsWith(`/mcp/${botId}`)) delete existingMcp.hq;
+  // Connectors (Settings → Connectors): drop every one Botly manages, then add back the ones this bot gets.
+  for (const n of managedConnectorNames()) delete existingMcp[n];
   cfg.mcp_servers = {
     ...existingMcp,
-    ...extraMcpServers(),
+    ...connectorEntriesFor(botId),
     botly: { url: `${env.mcpBaseUrl}/mcp/${botId}`, headers: { Authorization: `Bearer ${mcpToken(botId)}` }, timeout: 1800, connect_timeout: 30 },
   };
   writePrivate(cfgFile, YAML.stringify(cfg));

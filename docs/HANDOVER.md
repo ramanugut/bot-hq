@@ -258,3 +258,25 @@ See docs/SECURITY-HARDENING.md. Never describe this as already fixed.
 - Styles for headings, tables, cards and the pill are at the end of `web/src/styles/polish.css` (light, dark, phone).
 - `?fixtures` in dev now includes a sample health-check reply.
 - Existing chats keep the old prompt (Hermes fixes it per conversation); start a new chat to see the new layout.
+
+## Settings → Connectors (17 Nov 2026, GitHub only)
+- Outside MCP servers are managed in the app: Settings → Connectors. Add one with a name, its URL and optional
+  authentication (none, `Authorization: Bearer <key>`, or a custom header), test it (lists its tools), and give it to
+  All Bots or chosen Bots. Each can be turned off, edited, re-checked or removed. Only the owner (BOTLY_OWNER_EMAIL,
+  else the first ALLOWED_EMAILS entry) can change them; keys and secret URL parts never reach the browser.
+- Code: `server/src/connections.ts` (tables `connectors`, `connector_bots`, `connector_names`, `connector_meta`; the
+  MCP test client; edits to the main agent's config), `connections-apply.ts` (restarts), `routes-connectors.ts`
+  (`/api/connectors`), `web/src/components/config/ConnectorsSection.tsx`.
+- How it reaches the bots: extra bots get their connectors in `engines/<id>/config.yaml` from `writeHome` (engine.ts);
+  their gateway is restarted. The main agent's `/root/.hermes/config.yaml` is edited in place: only `mcp_servers` keys
+  Botly manages change, comments and everything else stay, the result is checked before it replaces the file, and the
+  last three copies are kept as `config.yaml.before-connectors-*`. Then `supervisorctl restart botly-hermes`
+  (`BOTLY_HERMES_PROGRAM`). A bot in the middle of a turn is restarted when it finishes.
+- This is a change of policy: before, the app never wrote the main agent's config. It now writes `mcp_servers` only.
+- Servers added with `scripts/add-mcp.sh` (EXTRA_MCP_SERVERS and URL entries in the main config) are brought into the
+  list on start: EXTRA ones for All Bots, main-config-only ones for the main bot. A connector removed in the app is
+  never brought back. After the first run EXTRA_MCP_SERVERS is not applied directly any more.
+- Not supported: servers that need an OAuth sign-in (Gmail, Notion etc. in Claude), the old SSE transport, and
+  programs run on the server (`command:` entries, which are left untouched).
+- Bots are told to ask before connector tools that change data, and to use a confirmation token only after a yes.
+- Also fixed: on phones the settings page had no width (the side-by-side layout was never switched to stacked).
