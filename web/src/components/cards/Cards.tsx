@@ -4,6 +4,7 @@ import { api, openPopup } from '../../lib/api';
 import { useStore } from '../../store';
 import { Icon } from '../Icon';
 import { ToolkitLogo } from '../ToolkitLogo';
+import { openImage } from '../Lightbox';
 
 type Card<K extends CardBody['card']> = Extract<CardBody, { card: K }>;
 
@@ -251,9 +252,9 @@ export function ImageCard({ row, body }: { row: Row; body: Card<'image'> }) {
       ) : media === 'audio' ? (
         <audio src={src} controls preload="metadata" style={{ width: '100%', display: 'block' }} />
       ) : (
-        <a href={src} target="_blank" rel="noreferrer">
+        <button type="button" className="image-card__open" onClick={() => openImage(src, body.caption ?? body.path, file)} aria-label="View full size">
           <img src={src} alt={body.caption ?? body.path} loading="lazy" style={{ width: '100%', height: 'auto', borderRadius: 10, display: 'block' }} />
-        </a>
+        </button>
       )}
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginTop: 6, fontSize: 12, opacity: 0.7 }}>
         <span>{body.caption ?? body.path}</span>

@@ -8,6 +8,7 @@ import { ThinkingBlock } from './ActivityLine';
 import { CardRow } from './cards/Cards';
 import { Icon } from './Icon';
 import { Markdown } from './Markdown';
+import { openImage } from './Lightbox';
 import { stepIcon } from '../lib/stepIcon';
 
 type Item =
@@ -69,7 +70,7 @@ function Attachments({ botId, items, side }: { botId: string; items: Attachment[
         <div className={`attachments__grid is-${Math.min(media.length, 3)}`}>
           {media.map((a) => a.kind === 'video'
             ? <video key={a.path} className="attachments__media" src={url(a.path)} controls playsInline preload="metadata" />
-            : <a key={a.path} href={url(a.path)} target="_blank" rel="noreferrer"><img className="attachments__media" src={url(a.path)} alt={a.name} loading="lazy" /></a>)}
+            : <button key={a.path} type="button" className="attachments__open" onClick={() => openImage(url(a.path), a.name, url(a.path, false))} aria-label={`View ${a.name}`}><img className="attachments__media" src={url(a.path)} alt={a.name} loading="lazy" /></button>)}
         </div>
       )}
       {other.map((a) => a.kind === 'audio'

@@ -10,6 +10,7 @@ import { ConfigLayer } from './components/config/ConfigLayer';
 import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
 import { startPresence } from './lib/push';
+import { Lightbox } from './components/Lightbox';
 
 // Dialogs load on first use, so the first screen arrives sooner. They are fetched quietly once the app is idle,
 // so opening one still feels instant.
@@ -104,6 +105,7 @@ function Shell() {
       {viewerOpen && <ComputerViewer />}
       <ConfigLayer />
       {notice && <div className="app-notice" role="status">{notice}</div>}
+      <Lightbox />
     </div>
   );
 }
